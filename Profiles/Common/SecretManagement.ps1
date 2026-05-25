@@ -1,6 +1,21 @@
 # Secret Management Functions
 # Provides secure credential storage using Microsoft.PowerShell.SecretStore
 # Requires: Microsoft.PowerShell.SecretManagement and Microsoft.PowerShell.SecretStore modules
+#
+# Threat model and tradeoffs are documented in the top-level README's
+# "Security" section — read that before relying on these helpers for anything
+# above casual API-key storage.
+
+# Private helper: returns $false (and emits an error) when the host can't run
+# an interactive password prompt for Unlock-SecretStore. Used by every public
+# function below to fail fast instead of hanging in CI / piped-input contexts.
+function Test-SecretStoreInteractive {
+    if ([Console]::IsInputRedirected) {
+        Write-Error "SecretStore is locked and stdin is not interactive. Run 'Unlock-SecretStore' in a terminal first, or 'Initialize-SecretStore -Authentication None' once to skip the password prompt."
+        return $false
+    }
+    return $true
+}
 
 function Get-OrCreateSecret {
     <#
@@ -25,17 +40,26 @@ function Get-OrCreateSecret {
         [switch]$AsPlainText
     )
 
-    # Ensure SecretStore vault exists
+    # Ensure SecretStore vault exists. Don't silently steal the -DefaultVault
+    # slot if another vault is already default — that would override any
+    # enterprise / 1Password integration without notice.
     try {
-        $vault = Get-SecretVault -Name "SecretStore" -ErrorAction SilentlyContinue
+        $vault = Get-SecretVault -Name "SecretStore" -ErrorAction Ignore
         if (-not $vault) {
+            $existingDefault = Get-SecretVault -ErrorAction Ignore | Where-Object IsDefault
+            $registerArgs = @{ Name = "SecretStore"; ModuleName = "Microsoft.PowerShell.SecretStore" }
+            if (-not $existingDefault) {
+                $registerArgs.DefaultVault = $true
+            } else {
+                Write-Warning "Another vault is already default ('$($existingDefault.Name)'). Registering SecretStore without -DefaultVault."
+            }
             Write-Host "Setting up SecretStore vault..." -ForegroundColor Yellow
-            Register-SecretVault -Name "SecretStore" -ModuleName "Microsoft.PowerShell.SecretStore" -DefaultVault
+            Register-SecretVault @registerArgs
         }
     }
     catch {
-        Write-Host "Setting up SecretStore vault..." -ForegroundColor Yellow
-        Register-SecretVault -Name "SecretStore" -ModuleName "Microsoft.PowerShell.SecretStore" -DefaultVault
+        Write-Warning "Failed to set up SecretStore vault: $($_.Exception.Message)"
+        return $null
     }
 
     # Check if SecretStore is unlocked, unlock if needed
@@ -45,6 +69,7 @@ function Get-OrCreateSecret {
     }
     catch {
         if ($_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*") {
+            if (-not (Test-SecretStoreInteractive)) { return $null }
             Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
             try {
                 Unlock-SecretStore
@@ -93,9 +118,11 @@ function Get-OrCreateSecret {
         Set-Secret -Name $Name -Secret $secretValue -ErrorAction Stop
         Write-Host "✅ Secret '$Name' stored securely!" -ForegroundColor Green
 
-        # Return in the requested format
+        # Return in the requested format. Convert in-process for the plaintext
+        # case instead of round-tripping back through the vault — same
+        # conversion Invoke-DownloadsTag.ps1 already uses on its own results.
         if ($AsPlainText) {
-            return Get-Secret -Name $Name -AsPlainText
+            return [System.Net.NetworkCredential]::new('', $secretValue).Password
         } else {
             return $secretValue
         }
@@ -119,6 +146,7 @@ function Get-StoredSecrets {
     }
     catch {
         if ($_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*") {
+            if (-not (Test-SecretStoreInteractive)) { return }
             Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
             try {
                 Unlock-SecretStore
@@ -155,6 +183,7 @@ function Remove-StoredSecret {
     }
     catch {
         if ($_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*") {
+            if (-not (Test-SecretStoreInteractive)) { return }
             Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
             try {
                 Unlock-SecretStore

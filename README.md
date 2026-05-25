@@ -15,7 +15,7 @@ This is a **personal-but-public** setup. It's what I actually run on my own mach
 ## Quickstart
 
 ```powershell
-git clone https://github.com/<your-fork>/pwsh-toolkit.git C:\Tools\pwsh-toolkit
+git clone https://github.com/haakonwibe/pwsh-toolkit.git C:\Tools\pwsh-toolkit
 cd C:\Tools\pwsh-toolkit
 .\install.ps1
 ```
@@ -117,6 +117,22 @@ The profile loads fine without any of these — the relevant feature just stays 
 | M365 helpers (`Connect-Graph`, `Get-TenantOverview`) | `Install-Module Microsoft.Graph, ExchangeOnlineManagement` |
 
 ---
+
+## Security
+
+Secrets used by helpers like `tagdl` are stored via [Microsoft.PowerShell.SecretStore](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.secretstore), which encrypts at rest using Windows DPAPI. The encryption keys are tied to your Windows user account.
+
+**What this protects against:** accidental commits of API keys (secrets live in `%LOCALAPPDATA%`, never in the repo), env-var leaks via process listings (`Get-Process` won't show them), and access by other Windows users on the same machine.
+
+**What it does NOT protect against:** compromise of your Windows user account (DPAPI keys derive from it), process memory inspection by code running as you, or `SecureString` analysis — Microsoft has [formally deprecated `SecureString` as a security boundary in .NET 6+](https://learn.microsoft.com/en-us/dotnet/api/system.security.securestring). Treat it as an obfuscated string, not a vault.
+
+For higher-assurance storage (separate vault password, keys not derived from your Windows account), use a tool like [1Password CLI](https://developer.1password.com/docs/cli/) or [Bitwarden CLI](https://bitwarden.com/help/cli/) and pipe the secret to the wrapper at runtime instead of via `Get-OrCreateSecret`.
+
+**Low-friction setup:** by default SecretStore prompts for a vault password on each new PowerShell session. To skip this — accepting that your Windows account becomes the only security boundary, which matches what DPAPI already gives you — run once:
+
+```powershell
+Initialize-SecretStore -Authentication None
+```
 
 ## Documentation
 

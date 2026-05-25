@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-25
+
+### Added
+
+- **Security section in README** documenting the SecretStore threat model — what DPAPI-backed storage protects against (accidental commits, process-listing leaks, cross-user access), what it doesn't (Windows-account compromise, process memory inspection, `SecureString` analysis after .NET 6's deprecation), and how to opt into low-friction setup via `Initialize-SecretStore -Authentication None`.
+
+### Changed
+
+- `Profiles/Common/SecretManagement.ps1`:
+  - **No longer silently steals the `-DefaultVault` slot.** If another vault is already default (enterprise KeyVault integration, 1Password CLI, etc.), `SecretStore` is registered without `-DefaultVault` and a warning is emitted.
+  - **Better error reporting** when vault registration fails — surfaces the actual error message instead of blindly retrying.
+  - **Non-interactive guard on `Unlock-SecretStore`** — when stdin is redirected (CI, piped input), fails fast with a clear remediation message instead of hanging on the password prompt. Applied to `Get-OrCreateSecret`, `Get-StoredSecrets`, and `Remove-StoredSecret` via a new private helper.
+  - **Skips the re-fetch round-trip** in `Get-OrCreateSecret`'s creation path. Converts the in-hand `SecureString` to plaintext in-process instead of round-tripping back through the vault.
+- `README.md` quickstart: replaced the `<your-fork>` placeholder in the clone URL with the canonical `haakonwibe/pwsh-toolkit`.
+
 ## [0.1.1] - 2026-05-25
 
 ### Added
@@ -31,6 +46,7 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/haakonwibe/pwsh-toolkit/releases/tag/v0.1.0
