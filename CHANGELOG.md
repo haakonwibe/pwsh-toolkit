@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-05-25
+
+### Changed
+
+- **`rdp` and `rps` now accept ad-hoc addresses.** When the argument doesn't match a configured `RemoteServers` entry, it's used as a literal address. `rps 10.0.0.2`, `rdp myhost.lab`, `rps build-server` all work without needing to add a bookmark first — the config list is now treated as bookmarks, not a whitelist.
+- The empty-config friendly message (from v0.1.5) is now only shown on the no-arg picker path. With an explicit address, `rdp`/`rps` skip the config check entirely and connect directly.
+- Display format adapts: configured entries show `Label (Address)`; ad-hoc addresses show just the address.
+
+### Added
+
+- Internal `Resolve-RemoteServer` helper that owns the match-or-fallthrough logic, replacing duplicated code in `rdp` and `rps`.
+- Two new Pester smoke tests asserting the ad-hoc fallthrough resolves correctly and produces no errors.
+
 ## [0.1.5] - 2026-05-25
 
 ### Fixed
@@ -77,7 +90,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.2...v0.1.3

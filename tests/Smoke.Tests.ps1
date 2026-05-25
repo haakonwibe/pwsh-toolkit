@@ -61,6 +61,15 @@ rdp 6>`$null
 rps 6>`$null
 `$rpsErrors = @(`$Error | ForEach-Object { `$_.ToString() })
 
+# Ad-hoc address: rdp/rps with a name/IP that isn't in the configured list
+# should fall through to using the argument as a literal address — bookmarks,
+# not whitelist. Resolve-RemoteServer is the testable surface; rdp/rps would
+# launch mstsc / Enter-PSSession against it.
+`$Error.Clear()
+`$adhoc = Resolve-RemoteServer -Match 'ad-hoc.example' -PickerTitle 'test'
+`$adhocResolveErrors = @(`$Error | ForEach-Object { `$_.ToString() })
+`$adhocResolvedAddress = `$adhoc.Address
+
 @{
     LoadErrors        = `$loadErrors
     MissingCommands   = `$missingCommands
@@ -68,8 +77,10 @@ rps 6>`$null
     PromptIsString    = (`$promptOutput -is [string])
     PromptIsNonEmpty  = ([bool]`$promptOutput)
     PromptErrors      = `$promptErrors
-    RdpErrors         = `$rdpErrors
-    RpsErrors         = `$rpsErrors
+    RdpErrors             = `$rdpErrors
+    RpsErrors             = `$rpsErrors
+    AdhocResolvedAddress  = `$adhocResolvedAddress
+    AdhocResolveErrors    = `$adhocResolveErrors
     ConfigToolkitRoot = `$script:Config.ToolkitRoot
     ConfigPrompt      = `$script:Config.Prompt
     JumpFolderCount   = `$script:JumpFolders.Count
@@ -216,6 +227,16 @@ Describe 'Remote server helpers (empty-state UX)' {
 
     It 'rps with no args + no RemoteServers shows friendly message — no errors' {
         $script:CustomProbe.RpsErrors | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Remote server helpers (ad-hoc address fallthrough)' {
+    It 'Resolve-RemoteServer returns the literal address when no config entry matches' {
+        $script:CustomProbe.AdhocResolvedAddress | Should -Be 'ad-hoc.example'
+    }
+
+    It 'ad-hoc resolution produces no errors' {
+        $script:CustomProbe.AdhocResolveErrors | Should -BeNullOrEmpty
     }
 }
 

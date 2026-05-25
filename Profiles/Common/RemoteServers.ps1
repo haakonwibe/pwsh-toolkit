@@ -113,25 +113,52 @@ function Get-RemoteServerByMatch {
     $servers | Where-Object { $_.Label -like "*$Match*" -or $_.Address -like "*$Match*" } | Select-Object -First 1
 }
 
+function Resolve-RemoteServer {
+    # Resolves $Match into a server object — first trying the configured
+    # RemoteServers list, then falling back to treating $Match as a literal
+    # address. With no $Match, opens the picker (which needs a non-empty
+    # config). Returns $null when the user cancels the picker or the empty-
+    # config message fires.
+    [CmdletBinding()]
+    param(
+        [string] $Match,
+        [Parameter(Mandatory)][string] $PickerTitle
+    )
+
+    if ($Match) {
+        $server = Get-RemoteServerByMatch -Match $Match
+        if (-not $server) {
+            # Not in config — treat the argument as a literal address so
+            # `rps 10.0.0.2` and `rps somehost.lab` work without needing
+            # to add an entry first.
+            $server = [pscustomobject]@{ Label = $Match; Address = $Match }
+        }
+        return $server
+    }
+
+    # No-arg path needs the picker — and the picker needs configured servers.
+    if (-not (Test-RemoteServersConfigured)) { return $null }
+    return Invoke-RemoteServerPicker -Title $PickerTitle -Servers @($script:Config.RemoteServers)
+}
+
+function Format-RemoteServerDisplay {
+    # "Label (Address)" for configured entries, just "Address" for ad-hoc
+    # ones (where Label == Address from the literal-fallback path).
+    param($Server)
+    if ($Server.Label -and $Server.Label -ne $Server.Address) {
+        return "$($Server.Label) ($($Server.Address))"
+    }
+    return $Server.Address
+}
+
 function rdp {
     [CmdletBinding()]
     param([Parameter(Position = 0)][string] $Match)
 
-    if (-not (Test-RemoteServersConfigured)) { return }
-
-    $server = $null
-    if ($Match) {
-        $server = Get-RemoteServerByMatch -Match $Match
-        if (-not $server) {
-            Write-Host "  No remote server matching '$Match'." -ForegroundColor Yellow
-            return
-        }
-    } else {
-        $server = Invoke-RemoteServerPicker -Title 'Remote Desktop (mstsc)' -Servers @($script:Config.RemoteServers)
-    }
+    $server = Resolve-RemoteServer -Match $Match -PickerTitle 'Remote Desktop (mstsc)'
     if (-not $server) { return }
 
-    Write-Host "  RDP → $($server.Label) ($($server.Address))" -ForegroundColor DarkGray
+    Write-Host "  RDP → $(Format-RemoteServerDisplay $server)" -ForegroundColor DarkGray
     Start-Process mstsc -ArgumentList "/v:$($server.Address)"
 }
 
@@ -139,29 +166,20 @@ function rps {
     [CmdletBinding()]
     param([Parameter(Position = 0)][string] $Match)
 
-    if (-not (Test-RemoteServersConfigured)) { return }
-
-    $server = $null
-    if ($Match) {
-        $server = Get-RemoteServerByMatch -Match $Match
-        if (-not $server) {
-            Write-Host "  No remote server matching '$Match'." -ForegroundColor Yellow
-            return
-        }
-    } else {
-        $server = Invoke-RemoteServerPicker -Title 'PowerShell Remoting (Enter-PSSession)' -Servers @($script:Config.RemoteServers)
-    }
+    $server = Resolve-RemoteServer -Match $Match -PickerTitle 'PowerShell Remoting (Enter-PSSession)'
     if (-not $server) { return }
+
+    $display = Format-RemoteServerDisplay $server
 
     # Use splatting because we add -Credential conditionally.
     $sessionArgs = @{ ComputerName = $server.Address }
     if ($server.User) {
-        Write-Host "  PSRemoting → $($server.Label) ($($server.Address)) as $($server.User)" -ForegroundColor DarkGray
+        Write-Host "  PSRemoting → $display as $($server.User)" -ForegroundColor DarkGray
         $cred = Get-Credential -UserName $server.User -Message "Credentials for $($server.Label)"
         if (-not $cred) { Write-Host '  Cancelled.' -ForegroundColor DarkGray; return }
         $sessionArgs.Credential = $cred
     } else {
-        Write-Host "  PSRemoting → $($server.Label) ($($server.Address))" -ForegroundColor DarkGray
+        Write-Host "  PSRemoting → $display" -ForegroundColor DarkGray
     }
     Enter-PSSession @sessionArgs
 }
