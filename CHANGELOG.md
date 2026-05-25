@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-25
+
+### Fixed
+
+- `rdp` and `rps` with no `RemoteServers` configured no longer crash with a confusing parameter-binding error (`Cannot bind argument to parameter 'Servers' because it is an empty collection`). They now print a friendly multi-line "no servers configured" message with a copy-pasteable config example. Affects users who haven't yet edited `config.psd1` after installing — the most common first-run state.
+
+### Added
+
+- New `Test-RemoteServersConfigured` helper in `Profiles/Common/RemoteServers.ps1`. Called at the top of `rdp` and `rps` so empty-config users get the helpful guidance instead of an arg-binding failure. Picker's `$Servers` parameter is no longer `Mandatory`, eliminating the original error path entirely.
+- Two new Pester smoke tests asserting `rdp` and `rps` produce zero `$Error` entries when called with an empty `RemoteServers` list — regression-tests the friendly empty-state UX.
+
 ## [0.1.4] - 2026-05-25
 
 ### Added
@@ -66,7 +77,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.1...v0.1.2

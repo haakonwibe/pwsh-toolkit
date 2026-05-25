@@ -11,15 +11,40 @@
 # User set, `rps` calls Get-Credential pre-filled with that name; `rdp`
 # always lets Windows handle the credential prompt.
 
+function Test-RemoteServersConfigured {
+    # Returns $false (after writing a helpful "how to configure" message) when
+    # $script:Config.RemoteServers is empty. Called at the top of rdp/rps so
+    # users get useful guidance instead of a parameter-binding error.
+    if (@($script:Config.RemoteServers).Count -gt 0) { return $true }
+
+    Write-Host ''
+    Write-Host '  No remote servers configured.' -ForegroundColor Yellow
+    Write-Host "  Add entries to Profiles/config.psd1's RemoteServers list, e.g.:" -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host '      RemoteServers = @(' -ForegroundColor DarkGray
+    Write-Host "          @{ Label = 'Lab DC';   Address = 'dc01.lab.local';   User = 'lab\admin' }" -ForegroundColor DarkGray
+    Write-Host "          @{ Label = 'Build';    Address = 'build.contoso.com' }" -ForegroundColor DarkGray
+    Write-Host '      )' -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host '  Open a new shell after editing, or run: . $PROFILE' -ForegroundColor DarkGray
+    Write-Host ''
+    return $false
+}
+
 function Invoke-RemoteServerPicker {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string] $Title,
-        [Parameter(Mandatory)][array]  $Servers
+        # Not Mandatory — empty arrays fail parameter binding before the
+        # function body runs, so an upfront check in the callers is the
+        # right place to handle "no servers configured."
+        [array] $Servers = @()
     )
 
     if ($Servers.Count -eq 0) {
-        Write-Host '  No remote servers configured. Add entries to RemoteServers in config.psd1.' -ForegroundColor Yellow
+        # Defense-in-depth — callers already check via Test-RemoteServersConfigured,
+        # but if anyone calls this picker directly with an empty list, bail
+        # cleanly instead of trying to draw an empty menu.
         return $null
     }
 
@@ -92,6 +117,8 @@ function rdp {
     [CmdletBinding()]
     param([Parameter(Position = 0)][string] $Match)
 
+    if (-not (Test-RemoteServersConfigured)) { return }
+
     $server = $null
     if ($Match) {
         $server = Get-RemoteServerByMatch -Match $Match
@@ -111,6 +138,8 @@ function rdp {
 function rps {
     [CmdletBinding()]
     param([Parameter(Position = 0)][string] $Match)
+
+    if (-not (Test-RemoteServersConfigured)) { return }
 
     $server = $null
     if ($Match) {

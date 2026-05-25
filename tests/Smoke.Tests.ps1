@@ -50,6 +50,17 @@ if (`$hasOurPrompt -and `$script:Config.Prompt -eq 'Custom') {
     `$promptErrors = @(`$Error | ForEach-Object { `$_.ToString() })
 }
 
+# Empty-state friendliness: rdp/rps with no args + empty RemoteServers should
+# print a helpful "configure first" message, NOT produce a parameter-binding
+# error. 6>`$null suppresses the informational stream so the message doesn't
+# pollute the probe's stdout.
+`$Error.Clear()
+rdp 6>`$null
+`$rdpErrors = @(`$Error | ForEach-Object { `$_.ToString() })
+`$Error.Clear()
+rps 6>`$null
+`$rpsErrors = @(`$Error | ForEach-Object { `$_.ToString() })
+
 @{
     LoadErrors        = `$loadErrors
     MissingCommands   = `$missingCommands
@@ -57,6 +68,8 @@ if (`$hasOurPrompt -and `$script:Config.Prompt -eq 'Custom') {
     PromptIsString    = (`$promptOutput -is [string])
     PromptIsNonEmpty  = ([bool]`$promptOutput)
     PromptErrors      = `$promptErrors
+    RdpErrors         = `$rdpErrors
+    RpsErrors         = `$rpsErrors
     ConfigToolkitRoot = `$script:Config.ToolkitRoot
     ConfigPrompt      = `$script:Config.Prompt
     JumpFolderCount   = `$script:JumpFolders.Count
@@ -193,6 +206,16 @@ Describe 'config.example.psd1' {
         foreach ($key in 'Prompt','OhMyPoshTheme','ToolkitRoot','OneDriveOrg','ExtraJumpFolders','DisableStartupTips','Features') {
             $cfg.ContainsKey($key) | Should -BeTrue -Because "key '$key' is missing"
         }
+    }
+}
+
+Describe 'Remote server helpers (empty-state UX)' {
+    It 'rdp with no args + no RemoteServers shows friendly message — no errors' {
+        $script:CustomProbe.RdpErrors | Should -BeNullOrEmpty
+    }
+
+    It 'rps with no args + no RemoteServers shows friendly message — no errors' {
+        $script:CustomProbe.RpsErrors | Should -BeNullOrEmpty
     }
 }
 
