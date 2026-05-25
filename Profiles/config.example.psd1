@@ -91,13 +91,16 @@
     # opens the file in your default .md app.
     #
     # When $null, NotesRoot is auto-detected via cascade:
-    #   1. Obsidian vault registered inside $env:OneDriveCommercial (best mix
-    #      of Obsidian indexing + OneDrive sync) — uses <vault>\Daily
-    #   2. Any Obsidian vault flagged "open" in obsidian.json — uses <vault>\Daily
-    #   3. <$env:OneDriveCommercial>\Documents\Notes
-    #   4. Most-recently-touched Obsidian vault — uses <vault>\Daily
-    #   5. <$env:OneDriveConsumer>\Documents\Notes (personal OneDrive)
-    #   6. <$env:USERPROFILE>\Documents\Notes (local-only fallback)
+    #   1. Obsidian vault flagged "open" in obsidian.json — uses <vault>\Daily
+    #   2. Most-recently-touched Obsidian vault — uses <vault>\Daily
+    #   3. OneDrive (Commercial preferred, then Consumer) — Documents\Notes
+    #   4. <$env:USERPROFILE>\Documents\Notes (local-only fallback)
+    #
+    # Philosophy: respect Obsidian-as-source-of-truth. If you have Obsidian
+    # configured with a vault open, that's where you work — whether the
+    # vault lives locally or in OneDrive is YOUR choice in Obsidian, not
+    # something the cascade overrides. Sync via OneDrive is the fallback
+    # for users who don't have Obsidian configured at all.
     #
     # Run `Set-NotesRoot` to pick interactively from the available candidates.
     # That command also prints the snippet to paste here for persistence.

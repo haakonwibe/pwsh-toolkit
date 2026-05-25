@@ -48,49 +48,45 @@ function Get-ObsidianVault {
 }
 
 function Resolve-NotesRoot {
-    # Cascade for picking a sensible default NotesRoot, in order of preference:
+    # Cascade for picking a sensible default NotesRoot:
     #
-    #   1. Obsidian vault that lives inside $env:OneDriveCommercial
-    #      (best of both worlds: Obsidian indexing + OneDrive sync)
-    #   2. Any Obsidian vault flagged "open" in obsidian.json
-    #   3. <$env:OneDriveCommercial>\Documents\Notes
-    #   4. Most-recently-touched Obsidian vault (regardless of location)
-    #   5. <$env:OneDriveConsumer>\Documents\Notes (personal OneDrive)
-    #   6. <$env:USERPROFILE>\Documents\Notes (local-only fallback)
+    #   1. Obsidian vault flagged "open" in obsidian.json → <vault>\Daily
+    #   2. Most-recently-touched Obsidian vault → <vault>\Daily
+    #   3. OneDrive (Commercial preferred, then Consumer) → Documents\Notes
+    #   4. Local <$env:USERPROFILE>\Documents\Notes
     #
-    # Obsidian-vault results return <vault>\Daily — the daily-notes plugin's
-    # convention — so notes live inside the vault but don't clutter the root.
+    # Philosophy: respect Obsidian-as-source-of-truth. If a user has Obsidian
+    # configured with a vault open, that's where they're working — whether
+    # the vault is local or in OneDrive is their choice in Obsidian, NOT
+    # something the cascade should second-guess. Many Obsidian users
+    # deliberately keep vaults local; quietly steering their notes into
+    # OneDrive would be exactly wrong. Sync via OneDrive is the fallback
+    # for users who don't have Obsidian configured at all.
+    #
+    # Get-ObsidianVault already filters out vaults whose paths no longer
+    # exist on disk, so a stale "open" entry falls through to step 2.
+    # The 'Daily' subfolder mirrors Obsidian's daily-notes plugin convention
+    # so notes land inside the vault without cluttering its root.
 
     $vaults = Get-ObsidianVault
 
-    # 1. Obsidian vault inside OneDrive Business
-    if ($env:OneDriveCommercial -and $vaults.Count -gt 0) {
-        $insideOneDrive = $vaults |
-            Where-Object { $_.Path -like "$env:OneDriveCommercial*" } |
-            Sort-Object Ts -Descending |
-            Select-Object -First 1
-        if ($insideOneDrive) { return (Join-Path $insideOneDrive.Path 'Daily') }
-    }
-
-    # 2. Any "open" Obsidian vault
+    # 1. Obsidian "open" vault
     $openVault = $vaults | Where-Object { $_.IsOpen } | Select-Object -First 1
     if ($openVault) { return (Join-Path $openVault.Path 'Daily') }
 
-    # 3. OneDrive Business Documents
-    if ($env:OneDriveCommercial -and (Test-Path -LiteralPath $env:OneDriveCommercial)) {
-        return (Join-Path $env:OneDriveCommercial 'Documents\Notes')
-    }
-
-    # 4. Most-recent Obsidian vault
+    # 2. Most-recently-touched Obsidian vault
     $recent = $vaults | Sort-Object Ts -Descending | Select-Object -First 1
     if ($recent) { return (Join-Path $recent.Path 'Daily') }
 
-    # 5. Personal OneDrive Documents
+    # 3. OneDrive (Commercial preferred for work setups, then Consumer)
+    if ($env:OneDriveCommercial -and (Test-Path -LiteralPath $env:OneDriveCommercial)) {
+        return (Join-Path $env:OneDriveCommercial 'Documents\Notes')
+    }
     if ($env:OneDriveConsumer -and (Test-Path -LiteralPath $env:OneDriveConsumer)) {
         return (Join-Path $env:OneDriveConsumer 'Documents\Notes')
     }
 
-    # 6. Local Documents fallback
+    # 4. Local Documents fallback
     return (Join-Path $env:USERPROFILE 'Documents\Notes')
 }
 

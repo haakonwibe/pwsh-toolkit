@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-05-25
+
+### Changed
+
+- **`Resolve-NotesRoot` cascade simplified from 6 steps to 4** — the previous v0.1.17 logic preferred OneDrive-located Obsidian vaults over the user's actually-open vault, which violates Obsidian's local-first ethos. Many Obsidian users deliberately keep vaults local; quietly steering their notes into OneDrive would be exactly the wrong default for that audience. New cascade respects Obsidian-as-source-of-truth:
+  1. Obsidian vault flagged `"open": true` in `obsidian.json` → `<vault>\Daily`
+  2. Most-recently-touched Obsidian vault → `<vault>\Daily`
+  3. OneDrive (Commercial preferred, then Consumer) → `Documents\Notes`
+  4. Local `<$env:USERPROFILE>\Documents\Notes` (fallback)
+- The principle: if you have Obsidian configured with a vault open, that's where you're working — whether that vault is local or in OneDrive is YOUR choice in Obsidian, not something the cascade should second-guess. Sync via OneDrive is the fallback for users who don't have Obsidian configured at all.
+- `config.example.psd1` comment block updated with the new cascade + philosophy paragraph.
+- Get-ObsidianVault still filters by `Test-Path -LiteralPath`, so a stale "open" entry pointing at a missing path falls through to step 2 naturally.
+
 ## [0.1.17] - 2026-05-25
 
 ### Changed
@@ -202,7 +215,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.14...v0.1.15
