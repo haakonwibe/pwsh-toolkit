@@ -42,7 +42,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 
 | Helper | What it does |
 |---|---|
-| **`j`** | Interactive folder jumper — picker with digit shortcuts (1-9 instant), arrow keys + Enter, Esc cancel. Renders on the terminal's alternate screen buffer so scrollback is preserved. `j <substring>` skips the picker for a direct fuzzy jump. |
+| **`j`** | Interactive folder jumper — picker with digit shortcuts (1-9 instant), arrow keys + Enter, Esc cancel. Renders on the terminal's alternate screen buffer so scrollback is preserved. `j <name>` skips the picker for a direct fuzzy jump against your configured bookmarks; if no bookmark matches, falls through to treating the argument as a literal directory path, so `j C:\Some\Path` works too. |
 | **`jb` / `jf`** | Browser-style back/forward through visited folders, per session. |
 | **`peek <archive>`** | Extracts an archive to `$env:TEMP\peek\<name>-<timestamp>` and jumps you there. Dispatches to WinRAR for `.rar`, 7-Zip for everything else, `Expand-Archive` for `.zip` if neither is installed. `peek -List`, `peek -Active`, `peek -Clean` for the obvious variants. |
 | **`df`** | Disk-free overview with colored usage bars (green ≤70%, yellow 71-89%, red ≥90%). Fixed drives by default; `df -All` includes removable, network, and CD-ROM. |

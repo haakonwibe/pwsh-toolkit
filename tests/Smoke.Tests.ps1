@@ -70,6 +70,24 @@ rps 6>`$null
 `$adhocResolveErrors = @(`$Error | ForEach-Object { `$_.ToString() })
 `$adhocResolvedAddress = `$adhoc.Address
 
+# Folder jumper: same bookmark-vs-literal-path pattern as rdp/rps. j with
+# a non-matching name that IS a real directory should Set-Location there;
+# with a non-matching name that's NOT a path, it should print a friendly
+# message and produce no `$Error entries.
+Push-Location
+`$Error.Clear()
+j 'C:\Windows' 6>`$null
+`$jLiteralErrors  = @(`$Error | ForEach-Object { `$_.ToString() })
+`$jLiteralLanded  = ((Get-Location).Path -eq 'C:\Windows')
+Pop-Location
+
+Push-Location
+`$Error.Clear()
+j 'no-such-bookmark-or-path-xyz' 6>`$null
+`$jBadMatchErrors = @(`$Error | ForEach-Object { `$_.ToString() })
+`$jBadMatchMoved  = ((Get-Location).Path -ne (Get-Location).Path)  # always false; ensures we didn't move
+Pop-Location
+
 @{
     LoadErrors        = `$loadErrors
     MissingCommands   = `$missingCommands
@@ -81,6 +99,9 @@ rps 6>`$null
     RpsErrors             = `$rpsErrors
     AdhocResolvedAddress  = `$adhocResolvedAddress
     AdhocResolveErrors    = `$adhocResolveErrors
+    JLiteralLanded        = `$jLiteralLanded
+    JLiteralErrors        = `$jLiteralErrors
+    JBadMatchErrors       = `$jBadMatchErrors
     ConfigToolkitRoot = `$script:Config.ToolkitRoot
     ConfigPrompt      = `$script:Config.Prompt
     JumpFolderCount   = `$script:JumpFolders.Count
@@ -237,6 +258,20 @@ Describe 'Remote server helpers (ad-hoc address fallthrough)' {
 
     It 'ad-hoc resolution produces no errors' {
         $script:CustomProbe.AdhocResolveErrors | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Folder jumper (literal path fallthrough)' {
+    It 'j with a non-matching name that IS a real directory jumps there' {
+        $script:CustomProbe.JLiteralLanded | Should -BeTrue
+    }
+
+    It 'j with a real directory path produces no errors' {
+        $script:CustomProbe.JLiteralErrors | Should -BeNullOrEmpty
+    }
+
+    It 'j with a non-matching name AND non-existent path produces no errors (friendly message only)' {
+        $script:CustomProbe.JBadMatchErrors | Should -BeNullOrEmpty
     }
 }
 

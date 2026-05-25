@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-05-25
+
+### Changed
+
+- **`j` (folder jumper) now accepts literal directory paths** when the argument doesn't match a configured bookmark. `j C:\Windows`, `j ~\Documents\Projects\thing`, `j .\subdir` all work — same bookmark-vs-fallthrough pattern just applied to `rdp`/`rps`. `Test-Path -PathType Container` is used so files don't sneak through and trip `Set-Location`. The "no match" error message updated to "no jump destination matching X and no such directory exists" to reflect both lookup paths.
+
+### Added
+
+- Three new Pester smoke tests for the `j` literal-path fallthrough: real directory → jumps there with zero errors; non-matching name with no real directory → friendly message, zero `$Error` entries. `Push-Location`/`Pop-Location` wrap the probe calls so the test runner's working directory isn't disturbed.
+
 ## [0.1.6] - 2026-05-25
 
 ### Changed
@@ -90,7 +100,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.3...v0.1.4

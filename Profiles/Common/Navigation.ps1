@@ -96,15 +96,28 @@ function j {
     param([Parameter(Position = 0)][string] $Match)
 
     $items = @($script:JumpFolders)
-    if ($items.Count -eq 0) {
-        Write-Host '  No jump destinations configured.' -ForegroundColor Yellow
+
+    if ($Match) {
+        # 1) Try the configured bookmark list first — fuzzy match against label or path.
+        $hit = $items | Where-Object { $_.Label -like "*$Match*" -or $_.Path -like "*$Match*" } | Select-Object -First 1
+        if ($hit) { Invoke-JumpTo -Path $hit.Path; return }
+
+        # 2) No bookmark match — try the argument as a literal directory path.
+        #    -PathType Container ensures files don't sneak through and trip
+        #    Set-Location (which only accepts containers).
+        if (Test-Path -LiteralPath $Match -PathType Container) {
+            Invoke-JumpTo -Path $Match
+            return
+        }
+
+        # 3) Neither — give a clear "what we tried" message.
+        Write-Host "  No jump destination matching '$Match' and no such directory exists." -ForegroundColor Yellow
         return
     }
 
-    if ($Match) {
-        $hit = $items | Where-Object { $_.Label -like "*$Match*" -or $_.Path -like "*$Match*" } | Select-Object -First 1
-        if ($hit) { Invoke-JumpTo -Path $hit.Path; return }
-        Write-Host "  No jump destination matching '$Match'." -ForegroundColor Yellow
+    # No-arg path: picker needs at least one bookmark.
+    if ($items.Count -eq 0) {
+        Write-Host '  No jump destinations configured.' -ForegroundColor Yellow
         return
     }
 
