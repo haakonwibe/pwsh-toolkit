@@ -55,6 +55,14 @@ function Get-OrCreateSecret {
             }
             Write-Host "Setting up SecretStore vault..." -ForegroundColor Yellow
             Register-SecretVault @registerArgs
+
+            # Configure passwordless mode as the default. DPAPI already binds
+            # the vault file to your Windows user account, so the optional
+            # vault password is largely second-factor theater for personal
+            # use. Users who want the extra layer can switch via:
+            #     Initialize-SecretStore -Authentication Password
+            # README's Security section documents the threat model.
+            Initialize-SecretStore -Authentication None -Interaction None -Force
         }
     }
     catch {

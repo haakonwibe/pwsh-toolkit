@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-05-25
+
+### Changed
+
+- **`Get-OrCreateSecret` now configures SecretStore in passwordless mode (`Authentication None`) on first-time vault setup.** DPAPI already binds the vault file to the Windows user account; the optional vault password was second-factor theater that added friction (per-session prompt) without meaningfully changing the threat model on a personal machine. Users wanting the extra layer can switch with `Initialize-SecretStore -Authentication Password` after setup. Existing vaults are untouched — the new default only applies to fresh installs that haven't registered the vault yet.
+- **README Security section updated** to reflect the new default. The previous "low-friction setup" paragraph (manual `Initialize-SecretStore -Authentication None`) is now redundant; replaced with an "if you want the extra layer" hint pointing at the Password mode.
+
 ## [0.1.9] - 2026-05-25
 
 ### Added
@@ -117,7 +124,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.6...v0.1.7

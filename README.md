@@ -160,11 +160,15 @@ Secrets used by helpers like `tagdl` are stored via [Microsoft.PowerShell.Secret
 
 For higher-assurance storage (separate vault password, keys not derived from your Windows account), use a tool like [1Password CLI](https://developer.1password.com/docs/cli/) or [Bitwarden CLI](https://bitwarden.com/help/cli/) and pipe the secret to the wrapper at runtime instead of via `Get-OrCreateSecret`.
 
-**Low-friction setup:** by default SecretStore prompts for a vault password on each new PowerShell session. To skip this — accepting that your Windows account becomes the only security boundary, which matches what DPAPI already gives you — run once:
+**Passwordless by default.** When `Get-OrCreateSecret` first sets up the vault for a new user, it configures `Authentication = None` — DPAPI is the only security boundary, which is honest about what's actually protecting the secrets. No per-session password prompts.
+
+If you want the extra layer (vault password on top of DPAPI), run once after setup:
 
 ```powershell
-Initialize-SecretStore -Authentication None
+Initialize-SecretStore -Authentication Password
 ```
+
+Existing vaults aren't touched — the default only applies on first-time vault creation. To change an already-configured vault, use the command above (with the current password if there is one).
 
 ## Connecting to remote hosts
 
