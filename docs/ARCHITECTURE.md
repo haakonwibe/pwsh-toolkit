@@ -109,6 +109,39 @@ Any helper that takes a `<name>` argument and looks it up against a configured l
 
 See `j` in `Profiles/Common/Navigation.ps1` and `Resolve-RemoteServer` in `Profiles/Common/RemoteServers.ps1` for the reference implementation. Three tagged releases (v0.1.5 → v0.1.6 → v0.1.7) were spent iterating to this shape; any future "lookup by name" helper should ship with the pattern in place.
 
+### 11. AI helpers must instruct plain-text output and strip markdown defensively
+
+LLM responses default to markdown formatting — `**bold**`, triple-backtick code fences, `#` headings, `-` bullets. The PowerShell console does NOT render any of that, so it comes through as literal characters and makes output worse than just plain text would have been.
+
+Any helper that calls an LLM and prints the response to the terminal must:
+
+1. **Tell the model explicitly that its output goes to a console**, with concrete examples of what to avoid. Generic "be concise" instructions aren't enough — the model still reaches for markdown by default.
+2. **Strip the common offenders post-receipt as defense in depth.** Five regex lines catch ~95% of lapses: `**bold**`, `` `inline` ``, `` ``` `` fences (with or without language), `#`-prefix headings.
+3. **Use ANSI color via `Write-Host -ForegroundColor`** to highlight structured bits (e.g., indented commands in cyan), so the eye lands on the runnable parts without the model needing to "format" them with markdown.
+
+See `wtf` in `Profiles/Common/Wtf.ps1` for the reference pattern — both the prompt's FORMAT block and the post-process strip. Any future AI helper (`gcm`, etc.) should follow the same shape from day one instead of shipping with raw markdown leakage like v0.1.12-14 of `wtf` did.
+
+### 12. Config slots are literal strings; env-var resolution lives in the loader
+
+`Profiles/config.psd1` is parsed by `Import-PowerShellDataFile`, which runs in restricted-language mode — no `$variable` references, no string interpolation, no cmdlet calls. The first time someone tries `Path = $env:TEMP` in `ExtraJumpFolders`, they get a confusing parse-time error.
+
+All path-like config slots accept either:
+
+- A **literal string** path (`'C:\Users\johnsmith\Obsidian Vault\Daily'`), or
+- **`$null`** for "use the default / auto-detect"
+
+When the value is `$null`, the loader (`pwsh-toolkit-profile.ps1`) resolves it after the data file is imported, where regular PowerShell rules apply:
+
+```powershell
+if (-not $script:Config.NotesRoot) {
+    $script:Config.NotesRoot = Join-Path $env:USERPROFILE 'Documents\Notes'
+}
+```
+
+Currently applied across `ToolkitRoot`, `OneDriveOrg`, `NotesRoot`, `OhMyPoshTheme`. Any new path-like slot follows the same shape: literal-or-`$null` in `config.example.psd1` (with the constraint documented inline near the slot), plus an auto-detect block in the loader's "hard fallback defaults" section.
+
+For complex per-machine logic that needs PowerShell expressions (network drive mappings, conditional paths, Test-Path checks), the answer is **`Machines/<COMPUTERNAME>.ps1`** — that file is regular PowerShell, dot-sourced after the config is applied, so it can extend any `$script:` variable with arbitrary expressions. The config.psd1 restriction is acceptable precisely because this escape hatch exists.
+
 ---
 
 ## What NOT to do

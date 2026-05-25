@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-05-25
+
+### Added
+
+- **ARCHITECTURE convention #11** — AI helpers must instruct plain-text output (LLM responses default to markdown which the console doesn't render) and strip markdown defensively post-receipt. Codifies what we learned writing `wtf` so the next AI helper (`gcm`, etc.) ships with the pattern from day one.
+- **ARCHITECTURE convention #12** — `config.psd1` slots are literal strings or `$null`; env-var resolution lives in the loader. Captures the pattern now applied across `ToolkitRoot`, `OneDriveOrg`, `NotesRoot`, and `OhMyPoshTheme`. Also documents the `Machines/<COMPUTERNAME>.ps1` escape hatch for complex per-machine logic.
+
+### Changed
+
+- **Poster daily-driver tile grid** bumped from `lg:grid-cols-7` to `md:grid-cols-5` (dropping the breakpoint so medium and large render the same). Cleaner 5×2 layout for the current 10 tiles vs the previous awkward 7+3.
+
 ## [0.1.15] - 2026-05-25
 
 ### Changed
@@ -164,7 +175,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.12...v0.1.13
