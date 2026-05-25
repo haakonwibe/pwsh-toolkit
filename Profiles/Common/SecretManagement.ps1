@@ -62,7 +62,25 @@ function Get-OrCreateSecret {
             # use. Users who want the extra layer can switch via:
             #     Initialize-SecretStore -Authentication Password
             # README's Security section documents the threat model.
-            Initialize-SecretStore -Authentication None -Interaction None -Force
+            #
+            # Two reasons to wrap this defensively:
+            # 1. Register-SecretVault registers the module as a vault provider
+            #    but doesn't import its cmdlets — Initialize-SecretStore can
+            #    fail with "term not recognized" on the first call in a fresh
+            #    session. Import-Module forces the load.
+            # 2. On a pre-existing password-protected store (user had one set
+            #    up before v0.1.10), Initialize-SecretStore -Authentication
+            #    None can't switch modes without the current password —
+            #    swallow that failure; the existing store stays usable.
+            try {
+                Import-Module Microsoft.PowerShell.SecretStore -ErrorAction Stop
+                Initialize-SecretStore -Authentication None -Interaction None -Force -ErrorAction Stop
+            }
+            catch {
+                # Best-effort: vault is registered, rest of function still
+                # works. Silent on purpose — users with existing
+                # password-protected stores don't need to see a warning.
+            }
         }
     }
     catch {

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-05-25
+
+### Fixed
+
+- **`Get-OrCreateSecret` no longer fails on first-time vault registration in a fresh shell** — the v0.1.10 passwordless-by-default change called `Initialize-SecretStore` right after `Register-SecretVault`, but `Register-SecretVault` only records the module as a vault provider without importing its cmdlets, so `Initialize-SecretStore` could throw "term not recognized" on the very call meant to configure the freshly-registered vault. The outer catch then bailed out with `return $null`, even though the vault WAS successfully registered and the secrets were retrievable.
+
+  Fix: explicit `Import-Module Microsoft.PowerShell.SecretStore` before the `Initialize-SecretStore` call, plus an inner try/catch so that any remaining auto-config failure (e.g. pre-existing password-protected store from before v0.1.10) is swallowed silently — the vault is still registered and the rest of the function proceeds. Users with existing setups are unaffected; users on fresh machines no longer hit a confusing "Failed to set up SecretStore vault" warning followed by a "No Anthropic API key found" message when the key was right there.
+
 ## [0.1.13] - 2026-05-25
 
 ### Added
@@ -147,7 +155,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.10...v0.1.11
