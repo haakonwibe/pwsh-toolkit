@@ -2,6 +2,13 @@
 # Keep your machine-specific overrides local.
 Profiles/config.psd1
 
+# Per-machine and per-host customization scripts. These contain real paths,
+# network drive mappings, possibly company OneDrive orgs, etc. — personal
+# enough to stay out of a public repo. The README.md files in these folders
+# stay tracked as documentation.
+Profiles/Machines/*.ps1
+Profiles/Hosts/*.ps1
+
 # Backups created by install.ps1 when it replaces an existing $PROFILE.
 *.backup-*
 

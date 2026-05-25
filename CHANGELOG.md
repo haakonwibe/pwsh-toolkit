@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-25
+
+### Added
+
+- `.gitignore` now excludes `Profiles/Machines/*.ps1` and `Profiles/Hosts/*.ps1`. These are personal per-machine / per-host customization scripts (real paths, network drive mappings, company OneDrive orgs) and shouldn't ride along to a public repo. The `README.md` files in those folders stay tracked as documentation.
+
+### Changed
+
+- `Profiles/config.example.psd1`: expanded the `ExtraJumpFolders` comment to call out that `Import-PowerShellDataFile` runs in restricted-language mode — only literal strings work. `$env:TEMP`, `"$HOME\dev"`, and cmdlet calls all raise a parse-time error. Dynamic paths belong in `Machines/<COMPUTERNAME>.ps1` (regular PowerShell, dot-sourced after the config).
+
 ## [0.1.2] - 2026-05-25
 
 ### Added
@@ -46,7 +56,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/haakonwibe/pwsh-toolkit/releases/tag/v0.1.0

@@ -44,9 +44,21 @@
     # Extra destinations appended to the built-in starter list (Home, Downloads,
     # OneDrive, LocalAppData, ProgramData).
     #
-    # For complex or conditional setup, use Machines/<COMPUTERNAME>.ps1 and
-    # append to $script:JumpFolders from there — that file is dot-sourced after
-    # this config is applied, so it can override or extend anything here.
+    # IMPORTANT — only literal strings here. This file is parsed by
+    # Import-PowerShellDataFile in restricted-language mode, which DISALLOWS
+    # variable references and expressions:
+    #
+    #     Path = 'C:\GitHub'        ← OK (literal string)
+    #     Path = $env:TEMP          ← ERROR (variable reference)
+    #     Path = "$HOME\dev"        ← ERROR (interpolation)
+    #     Path = (Join-Path ...)    ← ERROR (cmdlet call)
+    #
+    # For anything that needs PowerShell evaluation (env vars, conditional
+    # paths, Test-Path checks, etc.), put it in Machines/<COMPUTERNAME>.ps1 —
+    # that file is regular PowerShell, dot-sourced after this config is
+    # applied, so it can extend $script:JumpFolders with arbitrary expressions:
+    #
+    #     $script:JumpFolders += [pscustomobject]@{ Label = 'Temp'; Path = $env:TEMP }
     ExtraJumpFolders = @(
         # @{ Label = 'GitHub'; Path = 'C:\GitHub' }
         # @{ Label = 'VMs';    Path = 'D:\VMs' }
