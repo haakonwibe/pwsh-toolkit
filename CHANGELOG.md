@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-05-25
+
+### Fixed
+
+- **`today` / `note` (no-args) third time's the charm — Electron stderr is genuinely contained now.** v0.1.19's `Start-Process` and v0.1.20's `ProcessStartInfo+UseShellExecute` both relied on "don't pass console handles to the spawned process," which sounds sufficient but isn't: Electron apps call `AttachConsole(ATTACH_PARENT_PROCESS)` at runtime, grabbing whatever console exists in the parent chain regardless of what was inherited at launch time. The fix is to ensure no parent console exists when that API call fires. Switched to launching through `cmd /c start "" "<file>"` with `-WindowStyle Hidden` — cmd dispatches the `start` command and exits immediately, so by the time Typora/Obsidian/VS Code's `AttachConsole` call runs, its parent (cmd) is gone and there's no console to attach to. Classic Windows fire-and-forget idiom; same shell association lookup as before.
+
 ## [0.1.20] - 2026-05-25
 
 ### Fixed
@@ -227,7 +233,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.20...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.21...HEAD
+[0.1.21]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.17...v0.1.18

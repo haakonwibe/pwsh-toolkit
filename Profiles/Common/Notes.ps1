@@ -194,26 +194,28 @@ function note {
 
     if (-not $Text -or $Text.Count -eq 0) {
         # No-args: open today's note via the OS shell association.
-        # Works with whatever .md handler the user has set (Obsidian, Typora,
+        # Works with whatever .md handler the user has set (Typora, Obsidian,
         # VS Code, etc.).
         #
-        # Why the explicit ProcessStartInfo + UseShellExecute dance instead
-        # of Invoke-Item or Start-Process: Electron-based editors (Typora,
-        # Obsidian, VS Code) write Chromium-style log messages to stderr on
-        # launch — "Failed to append Jump List category", GPU cache warnings,
-        # etc. — and BOTH Invoke-Item and Start-Process leave console handles
-        # inherited by the spawned process, so those writes spill into the
-        # parent shell at random intervals (before AND after the prompt
-        # returns). ProcessStartInfo with UseShellExecute = $true routes
-        # through the Win32 ShellExecuteEx API — the same code path File
-        # Explorer uses on double-click — which provably does not pass
-        # console handles to the spawned process. Chromium's stderr writes
-        # then go to NUL, the shell stays clean.
+        # The "cmd /c start" detour is deliberate. Three previous approaches
+        # (Invoke-Item, Start-Process, ProcessStartInfo+UseShellExecute) all
+        # leaked Chromium stderr into the parent shell — Electron apps call
+        # AttachConsole(ATTACH_PARENT_PROCESS) at runtime, which grabs
+        # whatever console exists in the parent chain regardless of what
+        # handles were inherited at launch. The fix is to make sure no
+        # parent console exists when AttachConsole fires:
+        #
+        #   pwsh.exe ─┬─> cmd.exe ─> start ─> Typora.exe
+        #             └─ continues normally
+        #
+        # cmd exits immediately after dispatching `start`, so by the time
+        # Typora calls AttachConsole(ATTACH_PARENT_PROCESS), its parent
+        # cmd is gone and there's nothing to attach to. WindowStyle Hidden
+        # suppresses cmd's brief flash.
         try {
-            $psi = [System.Diagnostics.ProcessStartInfo]::new()
-            $psi.FileName        = $notePath
-            $psi.UseShellExecute = $true
-            [void][System.Diagnostics.Process]::Start($psi)
+            Start-Process -FilePath 'cmd.exe' `
+                          -ArgumentList '/c', 'start', '""', ('"{0}"' -f $notePath) `
+                          -WindowStyle Hidden -ErrorAction Stop
         }
         catch {
             Write-Host "  Couldn't open $notePath via shell: $($_.Exception.Message)" -ForegroundColor Yellow
