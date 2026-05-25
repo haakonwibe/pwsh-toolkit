@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-25
+
+### Added
+
+- `docs/poster.html` — landing-page poster (Tailwind, glassmorphism, animated gradient bg) matching the style of [registry-configuration-engine-v1](https://haakonwibe.github.io/registry-configuration-engine-v1/poster.html). Linked from the top of the README. Render via GitHub Pages from the `main` branch's `docs/` folder.
+
 ## [0.1.0] - 2026-05-25
 
 Initial public release. Extracted and reorganized from a larger private repository, with personal identifiers stripped and a single config-driven loader replacing the previous two duplicate variants.
@@ -25,5 +31,6 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/haakonwibe/pwsh-toolkit/releases/tag/v0.1.0

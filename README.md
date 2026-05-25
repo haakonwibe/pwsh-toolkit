@@ -1,5 +1,9 @@
 # pwsh-toolkit
 
+<p align="center">
+  <a href="https://haakonwibe.github.io/pwsh-toolkit/poster.html"><strong>📊 View the project poster →</strong></a>
+</p>
+
 A modular PowerShell profile system + toolkit for Windows. Folder jumper, archive previewer, disk-free overview, interactive winget upgrade picker, AI-tagged Downloads viewer, and a rotating tip system — all wired up through one config-driven loader.
 
 This is a **personal-but-public** setup. It's what I actually run on my own machines; the install script is for anyone who finds something here useful. Not a generic framework, not aiming to be Oh My Posh-scale.
