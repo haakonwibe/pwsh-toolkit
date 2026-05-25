@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-05-25
+
+### Added
+
+- **`wtf`** — pipe the last `$Error` (or any text) to Claude Haiku and get back a plain-English explanation + likely fix. Three invocation modes: `wtf` with no args explains `$Error[0]`; `wtf "<pasted error>"` explains arbitrary text; `$Error[0] | wtf` and `Some-Command 2>&1 | wtf` accept pipeline input (ErrorRecord or anything else). Reuses the `Anthropic-API-Key` SecretStore convention with `$env:ANTHROPIC_API_KEY` fallback. Costs ~$0.001 per call on Haiku 4.5. New file: `Profiles/Common/Wtf.ps1`.
+
 ## [0.1.11] - 2026-05-25
 
 ### Fixed
@@ -134,7 +140,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.8...v0.1.9
