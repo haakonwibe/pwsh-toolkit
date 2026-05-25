@@ -196,7 +196,14 @@ function note {
         # No-args: open today's note in whatever app handles .md.
         # On a typical Obsidian setup with .md → Obsidian, this jumps right
         # into the vault. Falls back to VS Code / Notepad via Windows shell.
-        Invoke-Item -LiteralPath $notePath
+        #
+        # Start-Process (not Invoke-Item) because Electron-based editors like
+        # Obsidian emit Chromium-style log warnings on launch (Jump List,
+        # GPU cache, etc.) — Invoke-Item leaves their stderr attached to the
+        # parent shell so the warnings spill into your terminal. Start-Process
+        # spawns the app with its own output handles, keeping that noise
+        # contained.
+        Start-Process -FilePath $notePath
         return
     }
 

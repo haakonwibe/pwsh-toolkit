@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-05-25
+
+### Fixed
+
+- **`today` / `note` (no-args) no longer leaks Electron warnings into the shell.** Was using `Invoke-Item`, which spawns the associated app (Obsidian, VS Code, etc.) but leaves its stderr attached to the parent terminal. Electron-based editors emit Chromium-style log messages on launch (`Failed to append custom category 'Recent Locations' to Jump List due to system privacy settings`, GPU cache warnings, etc.) that are harmless but visually noisy. Switched to `Start-Process -FilePath`, which spawns the app with its own output handles — those internal warnings stay in the launched process and the parent shell stays clean.
+
 ## [0.1.18] - 2026-05-25
 
 ### Changed
@@ -215,7 +221,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.15...v0.1.16
