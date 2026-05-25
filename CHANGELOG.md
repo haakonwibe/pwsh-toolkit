@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-05-25
+
+### Reverted
+
+- **Rolled back v0.1.19, v0.1.20, and v0.1.21's escalating workarounds for the Electron-stderr "leak" in `today` / `note` (no-args).** The original `Invoke-Item -LiteralPath $notePath` is back. The Chromium `jump_list.cc` warnings from some Electron handlers (Typora was the reported case) are:
+  - Harmless — the note still opens, the editor works fine
+  - Out of our control once the handler app calls `AttachConsole(ATTACH_PARENT_PROCESS)` at runtime
+  - Fixable on the user side by either (a) using a different `.md` handler that doesn't emit them (Obsidian, VS Code, Notepad) or (b) enabling "Show recently opened items in Jump Lists" in Settings → Personalization → Start
+- Three releases of `Start-Process` → `ProcessStartInfo+UseShellExecute` → `cmd /c start` were premature optimization for cosmetic noise. The simpler `Invoke-Item` is idiomatic PowerShell for "open this file with the default app," and that's what's back.
+
+### Lesson noted
+
+Polish is good; chasing cosmetic noise from third-party apps' Chromium internals across multiple releases is over-fitting. If a future helper opens an external app, default to `Invoke-Item` — only escalate when there's an actual behavior bug (file doesn't open, app crashes, etc.), not just verbose-but-harmless stderr.
+
 ## [0.1.21] - 2026-05-25
 
 ### Fixed
@@ -233,7 +247,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.21...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.22...HEAD
+[0.1.22]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.18...v0.1.19

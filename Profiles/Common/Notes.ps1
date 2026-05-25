@@ -193,33 +193,21 @@ function note {
     }
 
     if (-not $Text -or $Text.Count -eq 0) {
-        # No-args: open today's note via the OS shell association.
-        # Works with whatever .md handler the user has set (Typora, Obsidian,
-        # VS Code, etc.).
+        # No-args: open today's note in whatever app handles .md.
+        # On a typical Obsidian setup with .md → Obsidian, this jumps right
+        # into the vault. Falls back to Typora / VS Code / Notepad via the
+        # Windows shell association.
         #
-        # The "cmd /c start" detour is deliberate. Three previous approaches
-        # (Invoke-Item, Start-Process, ProcessStartInfo+UseShellExecute) all
-        # leaked Chromium stderr into the parent shell — Electron apps call
-        # AttachConsole(ATTACH_PARENT_PROCESS) at runtime, which grabs
-        # whatever console exists in the parent chain regardless of what
-        # handles were inherited at launch. The fix is to make sure no
-        # parent console exists when AttachConsole fires:
-        #
-        #   pwsh.exe ─┬─> cmd.exe ─> start ─> Typora.exe
-        #             └─ continues normally
-        #
-        # cmd exits immediately after dispatching `start`, so by the time
-        # Typora calls AttachConsole(ATTACH_PARENT_PROCESS), its parent
-        # cmd is gone and there's nothing to attach to. WindowStyle Hidden
-        # suppresses cmd's brief flash.
-        try {
-            Start-Process -FilePath 'cmd.exe' `
-                          -ArgumentList '/c', 'start', '""', ('"{0}"' -f $notePath) `
-                          -WindowStyle Hidden -ErrorAction Stop
-        }
-        catch {
-            Write-Host "  Couldn't open $notePath via shell: $($_.Exception.Message)" -ForegroundColor Yellow
-        }
+        # NOTE: v0.1.19-21 chased a "Chromium stderr leaks into the parent
+        # shell" issue with some Electron handlers (Typora was the reported
+        # case) — Start-Process, ProcessStartInfo+UseShellExecute, and
+        # `cmd /c start` were all tried. None made a real-world difference
+        # the user cared about (the noise is harmless and the fix on the
+        # user side is either "use a different .md handler" or "flip the
+        # Windows Privacy Jump-List setting"). Reverted to the idiomatic
+        # Invoke-Item in v0.1.22 — keep this simple. Don't re-add workarounds
+        # unless someone reports an actually-broken behavior, not just noise.
+        Invoke-Item -LiteralPath $notePath
         return
     }
 
