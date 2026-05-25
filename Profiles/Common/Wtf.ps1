@@ -78,6 +78,13 @@ and fix errors quickly. Be concise: 2-4 sentences explaining what went wrong,
 then 1-3 lines of likely fixes. Don't quote the error back. Get to the point.
 If the cause is clear, lead with the fix.
 
+FORMAT — your output prints directly to a PowerShell console; markdown is NOT
+rendered. Follow these rules:
+- No markdown. No **bold**, no triple-backtick code fences, no # headings, no
+  hyphen/asterisk bullet lists. They show as literal characters.
+- Highlight commands by indenting them 4 spaces on their own line.
+- Keep paragraphs short. A blank line between explanation and fixes is fine.
+
 ERROR / TEXT TO EXPLAIN:
 $context
 "@
@@ -102,9 +109,28 @@ $context
                 -Method Post -Headers $headers -Body $body -ErrorAction Stop
             # Best-effort erase the "Asking Claude..." pending message
             Write-Host ("`r" + (' ' * 20) + "`r") -NoNewline
+
+            # Defensive markdown strip — the prompt asks for plain text but
+            # the model occasionally lapses. Handles the common offenders:
+            # **bold**, `inline code`, ```code fences```, and # headings.
             $text = $resp.content[0].text
+            $text = $text -replace '\*\*([^*]+)\*\*', '$1'         # **bold** -> bold
+            $text = $text -replace '(?m)^```\w*\s*$', ''           # opening/closing fences (lang)
+            $text = $text -replace '(?m)^```\s*$', ''              # plain ``` fences
+            $text = $text -replace '`([^`]+)`', '$1'               # `inline` -> inline
+            $text = $text -replace '(?m)^#{1,6}\s+', ''            # # heading -> heading
+            $text = $text.Trim()
+
+            # Light coloring: lines indented 4+ spaces look like commands —
+            # surface them in cyan so the eye lands on the runnable bits.
             Write-Host ''
-            Write-Host $text -ForegroundColor White
+            foreach ($line in ($text -split "`r?`n")) {
+                if ($line -match '^\s{4,}\S') {
+                    Write-Host $line -ForegroundColor Cyan
+                } else {
+                    Write-Host $line -ForegroundColor White
+                }
+            }
             Write-Host ''
         }
         catch {

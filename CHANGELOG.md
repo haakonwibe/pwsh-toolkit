@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-05-25
+
+### Changed
+
+- **`wtf` output is now console-formatted, not markdown.** The previous prompt didn't say anything about output format, so Claude defaulted to markdown — `**bold**` headings and triple-backtick code fences came through as literal characters in the PowerShell console. Three improvements:
+  - Prompt now explicitly tells Claude "your output prints directly to a PowerShell console; markdown is NOT rendered" with rules against `**`, code fences, `#` headings, and hyphen/asterisk bullet lists. Asks for 4-space indentation on commands instead.
+  - Defensive post-process strips common markdown artifacts (`**bold**`, `` `inline` ``, `` ``` `` fences, `#` headings) in case the model lapses anyway.
+  - Lines indented 4+ spaces (i.e. command examples) render in cyan, so the eye lands on the runnable bits.
+
 ## [0.1.14] - 2026-05-25
 
 ### Fixed
@@ -155,7 +164,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.11...v0.1.12
