@@ -6,7 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [0.1.7] - 2026-05-25
+## [0.1.8] - 2026-05-25
+
+### Added
+
+- **`## Connecting to remote hosts` section in README** — target-side setup commands for RDP (`Set-ItemProperty fDenyTSConnections` + `Enable-NetFirewallRule`) and PSRemoting (`Enable-PSRemoting`), the cross-domain `Set-Item WSMan:\localhost\Client\TrustedHosts` step for non-domain targets, and sanity-check one-liners (`Test-NetConnection`, `Test-WSMan`). Closes the "what do I run on the target?" gap left by v0.1.4.
+- **`Format-PsRemotingError`** in `Profiles/Common/RemoteServers.ps1`. `rps` now catches `Enter-PSSession` failures and renders a short remediation for the three common first-time-setup errors: TrustedHosts (prints the exact `Set-Item WSMan:\…` command with the address pre-filled), Access Denied (creds / group membership hint), and unreachable / WinRM-not-running (`Test-NetConnection` + `Enable-PSRemoting` hints). Unknown errors fall through to the original message so nothing is hidden.
+- **`ARCHITECTURE.md` convention #10** — "Name-lookup helpers are bookmarks, not whitelists." Captures the bookmark-vs-fallthrough pattern from `j`/`rdp`/`rps` so any future "lookup by name" helper ships with it from day one instead of taking three releases to converge.
+
+### Changed
+
+- `rps` adds `-ErrorAction Stop` to its splatted `Enter-PSSession` call so WinRM non-terminating errors get promoted into the new catch handler.
 
 ### Changed
 
@@ -100,7 +110,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.4...v0.1.5

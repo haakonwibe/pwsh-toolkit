@@ -162,6 +162,48 @@ function rdp {
     Start-Process mstsc -ArgumentList "/v:$($server.Address)"
 }
 
+function Format-PsRemotingError {
+    # Maps Enter-PSSession's noisy WinRM error messages to short, actionable
+    # remediations. The three branches cover the bulk of first-time-setup
+    # failures: TrustedHosts (cross-domain / workgroup), access denied (creds
+    # or group membership), and unreachable / WinRM-not-running on target.
+    # Unknown errors fall through to a "show the original" branch.
+    param($Server, $Exception)
+
+    $msg = $Exception.Exception.Message
+    Write-Host ''
+
+    if ($msg -match 'TrustedHosts') {
+        Write-Host '  Connection failed: TrustedHosts not configured for this target.' -ForegroundColor Yellow
+        Write-Host '  Required when the target is not in your AD domain.' -ForegroundColor DarkGray
+        Write-Host '  Run on THIS client (elevated for the WSMan: drive) and retry:' -ForegroundColor DarkGray
+        Write-Host ''
+        Write-Host "      Set-Item WSMan:\localhost\Client\TrustedHosts -Value '$($Server.Address)' -Concatenate -Force" -ForegroundColor White
+        Write-Host ''
+        Write-Host '  See README → "Connecting to remote hosts" for the full setup.' -ForegroundColor DarkGray
+        return
+    }
+
+    if ($msg -match 'Access is denied') {
+        Write-Host "  Connection failed: access denied on $($Server.Address)." -ForegroundColor Yellow
+        Write-Host '  Verify credentials and that your account is in Remote Management Users / Administrators on the target.' -ForegroundColor DarkGray
+        return
+    }
+
+    if ($msg -match 'cannot find the computer|cannot complete the operation|network path was not found|No such host|WinRM service is not running') {
+        Write-Host "  Connection failed: $($Server.Address) is unreachable or WinRM isn't responding." -ForegroundColor Yellow
+        Write-Host '  Test reachability from this client:' -ForegroundColor DarkGray
+        Write-Host "      Test-NetConnection $($Server.Address) -Port 5985" -ForegroundColor White
+        Write-Host '  On the TARGET (elevated), enable PSRemoting if needed:' -ForegroundColor DarkGray
+        Write-Host '      Enable-PSRemoting -Force' -ForegroundColor White
+        return
+    }
+
+    # Unknown — surface the underlying message so the user can act on it.
+    Write-Host "  Connection to $($Server.Address) failed:" -ForegroundColor Yellow
+    Write-Host "    $msg" -ForegroundColor DarkGray
+}
+
 function rps {
     [CmdletBinding()]
     param([Parameter(Position = 0)][string] $Match)
@@ -171,8 +213,10 @@ function rps {
 
     $display = Format-RemoteServerDisplay $server
 
-    # Use splatting because we add -Credential conditionally.
-    $sessionArgs = @{ ComputerName = $server.Address }
+    # Use splatting because we add -Credential conditionally. -ErrorAction Stop
+    # promotes non-terminating WinRM errors so the catch block can intercept
+    # them and render a useful remediation message.
+    $sessionArgs = @{ ComputerName = $server.Address; ErrorAction = 'Stop' }
     if ($server.User) {
         Write-Host "  PSRemoting → $display as $($server.User)" -ForegroundColor DarkGray
         $cred = Get-Credential -UserName $server.User -Message "Credentials for $($server.Label)"
@@ -181,5 +225,11 @@ function rps {
     } else {
         Write-Host "  PSRemoting → $display" -ForegroundColor DarkGray
     }
-    Enter-PSSession @sessionArgs
+
+    try {
+        Enter-PSSession @sessionArgs
+    }
+    catch {
+        Format-PsRemotingError -Server $server -Exception $_
+    }
 }

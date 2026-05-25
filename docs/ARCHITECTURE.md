@@ -98,6 +98,17 @@ Remove-Item Env:\POSH_GRAPH -ErrorAction Ignore   # might not exist — no need 
 
 `Common/PSReadLine.ps1` guards its `Set-PSReadLineOption -PredictionSource History` calls with `if ([Console]::IsOutputRedirected) { return }`. Without the guard, PSReadLine emits "The handle is invalid" into `$Error` on every CI run, `pwsh -Command` invocation, or piped-output scenario. Apply the same pattern to any future host-feature setup that requires a real TTY.
 
+### 10. Name-lookup helpers are bookmarks, not whitelists
+
+Any helper that takes a `<name>` argument and looks it up against a configured list — `j <name>`, `rdp <name>`, `rps <name>` — must:
+
+1. Try the configured list first (fuzzy match against label / path / address).
+2. Fall through to treating the argument as a literal value if nothing matches.
+
+`j C:\Some\Path` and `rps 10.0.0.2` should "just work" without requiring the user to add an entry first. The configured list is a shortcut layer, not a gating whitelist. Empty-config friendly messages (the "no jump destinations configured" / "no remote servers configured" guards) apply ONLY to the no-arg picker path, never to explicit-argument calls.
+
+See `j` in `Profiles/Common/Navigation.ps1` and `Resolve-RemoteServer` in `Profiles/Common/RemoteServers.ps1` for the reference implementation. Three tagged releases (v0.1.5 → v0.1.6 → v0.1.7) were spent iterating to this shape; any future "lookup by name" helper should ship with the pattern in place.
+
 ---
 
 ## What NOT to do

@@ -135,6 +135,53 @@ For higher-assurance storage (separate vault password, keys not derived from you
 Initialize-SecretStore -Authentication None
 ```
 
+## Connecting to remote hosts
+
+`rdp` and `rps` are thin wrappers — the targets still need the right server-side bits enabled. Quick reference:
+
+### RDP target setup
+
+Run elevated on the **target** machine:
+
+```powershell
+# Enable RDP
+Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
+# Open the firewall
+Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
+# Optionally let non-admins connect
+# Add-LocalGroupMember -Group 'Remote Desktop Users' -Member 'lab\someuser'
+```
+
+Windows **Home** SKUs don't include the RDP server; Pro / Enterprise / Server do. Azure VMs typically come with this already enabled.
+
+### PSRemoting target setup
+
+Run elevated on the **target** machine:
+
+```powershell
+Enable-PSRemoting -Force
+```
+
+That's it for domain-joined targets — Kerberos handles auth automatically when you connect as a domain account. Windows **Server** SKUs have WinRM enabled by default since 2012 R2; Windows 10/11 client SKUs do not, so this one-liner is still needed there.
+
+### Cross-domain / workgroup (TrustedHosts)
+
+When the target isn't in your AD domain (workgroup machine, lab VM, IP-only target), one more step on **this client**:
+
+```powershell
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value 'targethost' -Concatenate -Force
+```
+
+If you hit this in the wild, `rps` will detect the error message and print this exact remediation command with the target address pre-filled — you can usually just copy/paste from the failure output.
+
+### Sanity checks
+
+```powershell
+Test-NetConnection target -Port 3389       # RDP reachable?
+Test-NetConnection target -Port 5985       # WinRM HTTP reachable?
+Test-WSMan target                          # WinRM actually responding?
+```
+
 ## Documentation
 
 - **[`Profiles/README.md`](Profiles/README.md)** — module structure, helper reference, installation alternatives
