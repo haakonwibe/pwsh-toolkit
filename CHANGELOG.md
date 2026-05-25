@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-05-25
+
+### Fixed
+
+- **`today` / `note` (no-args) now really doesn't leak Electron warnings.** v0.1.19 switched from `Invoke-Item` to `Start-Process` on the theory that Start-Process gives the spawned app its own output handles — turned out not enough. PowerShell's `Start-Process` for documents still inherits parent console handles in some configurations, so Chromium's `jump_list.cc` errors kept spilling into the shell at random intervals (both before AND after the prompt returned). Switched to the explicit Win32 ShellExecuteEx path via `[System.Diagnostics.ProcessStartInfo]` with `UseShellExecute = $true` — the same code path File Explorer uses on double-click. ShellExecute provably does NOT pass console handles to the spawned process, so Chromium's stderr writes go to NUL and the shell stays clean. The associated app (Typora, Obsidian, VS Code, whatever) opens identically.
+
 ## [0.1.19] - 2026-05-25
 
 ### Fixed
@@ -221,7 +227,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.19...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.20...HEAD
+[0.1.20]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.16...v0.1.17

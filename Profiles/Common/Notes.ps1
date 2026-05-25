@@ -193,17 +193,31 @@ function note {
     }
 
     if (-not $Text -or $Text.Count -eq 0) {
-        # No-args: open today's note in whatever app handles .md.
-        # On a typical Obsidian setup with .md → Obsidian, this jumps right
-        # into the vault. Falls back to VS Code / Notepad via Windows shell.
+        # No-args: open today's note via the OS shell association.
+        # Works with whatever .md handler the user has set (Obsidian, Typora,
+        # VS Code, etc.).
         #
-        # Start-Process (not Invoke-Item) because Electron-based editors like
-        # Obsidian emit Chromium-style log warnings on launch (Jump List,
-        # GPU cache, etc.) — Invoke-Item leaves their stderr attached to the
-        # parent shell so the warnings spill into your terminal. Start-Process
-        # spawns the app with its own output handles, keeping that noise
-        # contained.
-        Start-Process -FilePath $notePath
+        # Why the explicit ProcessStartInfo + UseShellExecute dance instead
+        # of Invoke-Item or Start-Process: Electron-based editors (Typora,
+        # Obsidian, VS Code) write Chromium-style log messages to stderr on
+        # launch — "Failed to append Jump List category", GPU cache warnings,
+        # etc. — and BOTH Invoke-Item and Start-Process leave console handles
+        # inherited by the spawned process, so those writes spill into the
+        # parent shell at random intervals (before AND after the prompt
+        # returns). ProcessStartInfo with UseShellExecute = $true routes
+        # through the Win32 ShellExecuteEx API — the same code path File
+        # Explorer uses on double-click — which provably does not pass
+        # console handles to the spawned process. Chromium's stderr writes
+        # then go to NUL, the shell stays clean.
+        try {
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName        = $notePath
+            $psi.UseShellExecute = $true
+            [void][System.Diagnostics.Process]::Start($psi)
+        }
+        catch {
+            Write-Host "  Couldn't open $notePath via shell: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
         return
     }
 
