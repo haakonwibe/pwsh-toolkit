@@ -36,6 +36,7 @@ BeforeAll {
     'Get-OrCreateSecret','Get-StoredSecrets','Remove-StoredSecret',
     'rdp','rps',
     'wtf',
+    'note','today','Find-Note',
     'ask','ll','la','touch','which'
 )
 `$missingCommands = @(`$expectedCommands | Where-Object { -not (Get-Command `$_ -ErrorAction Ignore) })

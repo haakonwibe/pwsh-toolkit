@@ -16,6 +16,8 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'Find-File <name>  —  recursive filename search from the current directory';                 E = 'Try: Find-File config.json' }
     [pscustomobject]@{ H = 'Start-AdminTerminal  —  launch a new elevated Windows Terminal';                            E = 'Try: Start-AdminTerminal   (useful before winup on a non-elevated shell)' }
     [pscustomobject]@{ H = 'wtf  —  ask Claude what went wrong with the last error (or any piped text)';               E = 'Try: wtf   (or: $Error[0] | wtf, or: wtf "<pasted error>")' }
+    [pscustomobject]@{ H = 'note "thing"  —  timestamped append to today''s markdown journal (Obsidian-friendly)';      E = 'Try: note Met with Karen re: policy rollout   (today opens the file)' }
+    [pscustomobject]@{ H = 'Find-Note <query>  —  grep across every daily note';                                        E = 'Try: Find-Note "registry policy"' }
     [pscustomobject]@{ H = 'Get-OrCreateSecret  —  retrieve a SecretStore secret or prompt to create it';               E = 'Try: Get-OrCreateSecret -Name "Anthropic-API-Key" -AsPlainText' }
     [pscustomobject]@{ H = 'Get-StoredSecrets  —  list every secret you have stashed in SecretStore';                   E = 'Try: Get-StoredSecrets' }
     [pscustomobject]@{ H = 'rdp  —  Remote Desktop picker driven by config.psd1''s RemoteServers list';                 E = 'Try: rdp   (also: rdp dc, rdp build — fuzzy match)' }

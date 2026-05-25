@@ -65,6 +65,7 @@ if (-not $script:Config.ContainsKey('Prompt'))             { $script:Config.Prom
 if (-not $script:Config.ContainsKey('OhMyPoshTheme'))      { $script:Config.OhMyPoshTheme = 'default.omp.json' }
 if (-not $script:Config.ContainsKey('ExtraJumpFolders'))   { $script:Config.ExtraJumpFolders = @() }
 if (-not $script:Config.ContainsKey('RemoteServers'))      { $script:Config.RemoteServers = @() }
+if (-not $script:Config.ContainsKey('NotesRoot'))          { $script:Config.NotesRoot = $null }
 if (-not $script:Config.ContainsKey('DisableStartupTips')) { $script:Config.DisableStartupTips = $false }
 if (-not $script:Config.ContainsKey('Features'))           { $script:Config.Features = @{} }
 
@@ -79,6 +80,13 @@ if (-not $script:Config.ToolkitRoot) {
 if ($null -eq $script:Config.OneDriveOrg) {
     $leaf = if ($env:OneDriveCommercial) { Split-Path -Leaf $env:OneDriveCommercial }
     $script:Config.OneDriveOrg = if ($leaf -like 'OneDrive - *') { $leaf.Substring(11) } else { '' }
+}
+
+# NotesRoot default: ~\Documents\Notes (auto-created on first `note` call).
+# config.psd1 holds only literal paths (restricted-language mode), so the env
+# var expansion happens here instead of in the data file.
+if (-not $script:Config.NotesRoot) {
+    $script:Config.NotesRoot = Join-Path $env:USERPROFILE 'Documents\Notes'
 }
 
 # ─── Prompt setup (OhMyPosh branch) ─────────────────────────────────────────

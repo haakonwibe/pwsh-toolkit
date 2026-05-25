@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-05-25
+
+### Added
+
+- **`note` / `today` / `Find-Note`** — lightweight markdown journal. `note "thing"` appends a timestamped bullet to `<NotesRoot>/YYYY-MM-DD.md` (file is auto-created with a daily header on first touch). `today` is an alias for `note`; calling `today` with no args opens the file via `Invoke-Item` which lets your default `.md` handler take over — Obsidian, VS Code, Notepad, whatever's configured. Point `NotesRoot` at an Obsidian vault subfolder to write directly into it; Obsidian picks the file up as soon as it appears. `Find-Note "query"` greps across every note with `Select-String`, returning filename + line number + matched line. New file: `Profiles/Common/Notes.ps1`.
+- **`NotesRoot` slot in `config.example.psd1`** (literal-path only, like every other config field) plus hard-fallback default in the loader → `~\Documents\Notes` auto-created on first `note` call.
+
 ## [0.1.12] - 2026-05-25
 
 ### Added
@@ -140,7 +147,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.9...v0.1.10

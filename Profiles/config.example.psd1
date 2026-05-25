@@ -85,6 +85,19 @@
         # @{ Label = 'Jumphost';    Address = '10.0.5.20' }
     )
 
+    # ─── Notes / journal (note, today) ───────────────────────────────────────
+    # Folder for the daily markdown journal. `note "text"` appends a
+    # timestamped bullet to YYYY-MM-DD.md inside this folder; `today` (no-args)
+    # opens the file in your default .md app.
+    #
+    # Point NotesRoot at an Obsidian vault subfolder to write directly into it
+    # — Obsidian picks the file up as soon as it lands on disk.
+    #
+    # $null   = ~\Documents\Notes (auto-created)
+    # string  = explicit literal path (no $env: expansion — see ExtraJumpFolders
+    #           above for why)
+    NotesRoot = $null
+
     # ─── Startup tips ────────────────────────────────────────────────────────
     # The rotating tip shown at shell startup. The env var $env:PSPROFILE_NO_TIPS
     # also disables tips and overrides this setting (handy for CI / scripts).
