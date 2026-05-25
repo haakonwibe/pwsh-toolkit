@@ -82,12 +82,10 @@ if ($null -eq $script:Config.OneDriveOrg) {
     $script:Config.OneDriveOrg = if ($leaf -like 'OneDrive - *') { $leaf.Substring(11) } else { '' }
 }
 
-# NotesRoot default: ~\Documents\Notes (auto-created on first `note` call).
-# config.psd1 holds only literal paths (restricted-language mode), so the env
-# var expansion happens here instead of in the data file.
-if (-not $script:Config.NotesRoot) {
-    $script:Config.NotesRoot = Join-Path $env:USERPROFILE 'Documents\Notes'
-}
+# NotesRoot resolution is more involved (Obsidian config detection + OneDrive
+# preference cascade) — it's done by Resolve-NotesRoot in Notes.ps1 at the
+# end of that file's load, after Get-ObsidianVault and the cascade helpers
+# are defined. The loader leaves NotesRoot as $null here; Notes.ps1 fills it.
 
 # ─── Prompt setup (OhMyPosh branch) ─────────────────────────────────────────
 if ($script:Config.Prompt -eq 'OhMyPosh') {

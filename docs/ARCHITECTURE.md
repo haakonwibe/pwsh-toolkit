@@ -130,15 +130,22 @@ All path-like config slots accept either:
 - A **literal string** path (`'C:\Users\johnsmith\Obsidian Vault\Daily'`), or
 - **`$null`** for "use the default / auto-detect"
 
-When the value is `$null`, the loader (`pwsh-toolkit-profile.ps1`) resolves it after the data file is imported, where regular PowerShell rules apply:
+When the value is `$null`, the resolution happens in PowerShell code after the data file is imported — usually in the loader (`pwsh-toolkit-profile.ps1`), but a Common file can own its own resolution when the cascade is more involved than a one-liner:
 
 ```powershell
-if (-not $script:Config.NotesRoot) {
-    $script:Config.NotesRoot = Join-Path $env:USERPROFILE 'Documents\Notes'
+# Simple case — fine to keep in the loader's "hard fallback defaults" block.
+if (-not $script:Config.ToolkitRoot) {
+    $script:Config.ToolkitRoot = Split-Path -Parent $script:ProfileRoot
 }
+
+# Complex case — Common/Notes.ps1 owns its own cascade because the resolution
+# reads %APPDATA%\obsidian\obsidian.json and walks a 6-way preference list
+# (Obsidian vault inside OneDrive > any open vault > OneDrive Documents > ...).
+# The loader leaves NotesRoot as $null; Notes.ps1 fills it at the end of its
+# own load via Resolve-NotesRoot.
 ```
 
-Currently applied across `ToolkitRoot`, `OneDriveOrg`, `NotesRoot`, `OhMyPoshTheme`. Any new path-like slot follows the same shape: literal-or-`$null` in `config.example.psd1` (with the constraint documented inline near the slot), plus an auto-detect block in the loader's "hard fallback defaults" section.
+Currently applied across `ToolkitRoot`, `OneDriveOrg`, `OhMyPoshTheme` (loader-owned) and `NotesRoot` (Notes.ps1-owned). Any new path-like slot follows the same shape: literal-or-`$null` in `config.example.psd1` (with the constraint documented inline near the slot), plus a resolver in either the loader or the relevant Common file depending on how involved the cascade is.
 
 For complex per-machine logic that needs PowerShell expressions (network drive mappings, conditional paths, Test-Path checks), the answer is **`Machines/<COMPUTERNAME>.ps1`** — that file is regular PowerShell, dot-sourced after the config is applied, so it can extend any `$script:` variable with arbitrary expressions. The config.psd1 restriction is acceptable precisely because this escape hatch exists.
 

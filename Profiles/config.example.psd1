@@ -90,10 +90,18 @@
     # timestamped bullet to YYYY-MM-DD.md inside this folder; `today` (no-args)
     # opens the file in your default .md app.
     #
-    # Point NotesRoot at an Obsidian vault subfolder to write directly into it
-    # — Obsidian picks the file up as soon as it lands on disk.
+    # When $null, NotesRoot is auto-detected via cascade:
+    #   1. Obsidian vault registered inside $env:OneDriveCommercial (best mix
+    #      of Obsidian indexing + OneDrive sync) — uses <vault>\Daily
+    #   2. Any Obsidian vault flagged "open" in obsidian.json — uses <vault>\Daily
+    #   3. <$env:OneDriveCommercial>\Documents\Notes
+    #   4. Most-recently-touched Obsidian vault — uses <vault>\Daily
+    #   5. <$env:OneDriveConsumer>\Documents\Notes (personal OneDrive)
+    #   6. <$env:USERPROFILE>\Documents\Notes (local-only fallback)
     #
-    # $null   = ~\Documents\Notes (auto-created)
+    # Run `Set-NotesRoot` to pick interactively from the available candidates.
+    # That command also prints the snippet to paste here for persistence.
+    #
     # string  = explicit literal path (no $env: expansion — see ExtraJumpFolders
     #           above for why)
     NotesRoot = $null

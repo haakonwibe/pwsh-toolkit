@@ -18,6 +18,7 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'wtf  —  ask Claude what went wrong with the last error (or any piped text)';               E = 'Try: wtf   (or: $Error[0] | wtf, or: wtf "<pasted error>")' }
     [pscustomobject]@{ H = 'note "thing"  —  timestamped append to today''s markdown journal (Obsidian-friendly)';      E = 'Try: note Met with Karen re: policy rollout   (today opens the file)' }
     [pscustomobject]@{ H = 'Find-Note <query>  —  grep across every daily note';                                        E = 'Try: Find-Note "registry policy"' }
+    [pscustomobject]@{ H = 'Set-NotesRoot  —  interactive picker over Obsidian vaults + OneDrive paths for NotesRoot';  E = 'Try: Set-NotesRoot   (default auto-detects, picker is for overriding)' }
     [pscustomobject]@{ H = 'Get-OrCreateSecret  —  retrieve a SecretStore secret or prompt to create it';               E = 'Try: Get-OrCreateSecret -Name "Anthropic-API-Key" -AsPlainText' }
     [pscustomobject]@{ H = 'Get-StoredSecrets  —  list every secret you have stashed in SecretStore';                   E = 'Try: Get-StoredSecrets' }
     [pscustomobject]@{ H = 'rdp  —  Remote Desktop picker driven by config.psd1''s RemoteServers list';                 E = 'Try: rdp   (also: rdp dc, rdp build — fuzzy match)' }

@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-05-25
+
+### Changed
+
+- **`NotesRoot` now auto-detects via a cascade instead of defaulting to `~\Documents\Notes`** — the previous default was hard to find in Explorer and missed the OneDrive sync story most users actually want. New cascade (in `Resolve-NotesRoot`, called at `Notes.ps1` load time):
+  1. Obsidian vault registered inside `$env:OneDriveCommercial` → `<vault>\Daily` (best sync + Obsidian indexing)
+  2. Any Obsidian vault flagged `open: true` in `%APPDATA%\obsidian\obsidian.json` → `<vault>\Daily`
+  3. `<$env:OneDriveCommercial>\Documents\Notes`
+  4. Most-recently-touched Obsidian vault → `<vault>\Daily`
+  5. `<$env:OneDriveConsumer>\Documents\Notes` (personal OneDrive)
+  6. `<$env:USERPROFILE>\Documents\Notes` (local-only fallback)
+- Reads `%APPDATA%\obsidian\obsidian.json` if present (via new `Get-ObsidianVault` helper that filters out vaults whose paths no longer exist).
+- The 'Daily' subfolder mirrors Obsidian's daily-notes plugin convention so notes land inside the vault without cluttering its root.
+
+### Added
+
+- **`Set-NotesRoot`** — interactive picker over the auto-detected candidates (Obsidian vaults flagged with `open` / `OneDrive` tags + OneDrive Documents paths + local fallback). User picks; the function updates `$script:Config.NotesRoot` for the current session and prints the snippet to paste into `config.psd1` for persistence (no silent data-file roundtrip).
+- **`Get-ObsidianVault`** — reads `obsidian.json`, returns existing vaults with `Path` / `IsOpen` / `Ts` fields. Reusable for any future Obsidian integration.
+
+### Updated
+
+- `config.example.psd1` `NotesRoot` comment block now documents the cascade.
+- README helper table mentions `Set-NotesRoot`.
+- Tips, Smoke.Tests expected-commands list, ARCHITECTURE convention #12.
+
+ARCHITECTURE convention #12 amended: env-var resolution can live in either the loader (simple cases like `ToolkitRoot`) or the relevant Common file (complex cases like `NotesRoot`, which reads obsidian.json and walks a 6-way cascade). The principle stays the same — `config.psd1` is literal-or-`$null`, PowerShell code resolves the rest.
+
 ## [0.1.16] - 2026-05-25
 
 ### Added
@@ -175,7 +202,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.13...v0.1.14
