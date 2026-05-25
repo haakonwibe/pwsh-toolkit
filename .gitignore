@@ -1,0 +1,11 @@
+# User-specific profile config (copied from config.example.psd1 by install.ps1).
+# Keep your machine-specific overrides local.
+Profiles/config.psd1
+
+# Backups created by install.ps1 when it replaces an existing $PROFILE.
+*.backup-*
+
+# Pester / PSScriptAnalyzer artifacts (used by CI in .github/workflows/).
+TestResults.xml
+*.coverage
+*.coveragexml

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Lint and smoke test (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache PowerShell modules
+        uses: actions/cache@v4
+        with:
+          path: ~/Documents/PowerShell/Modules
+          key: ${{ runner.os }}-psmodules-v1
+
+      - name: Install PSScriptAnalyzer and Pester
+        shell: pwsh
+        run: |
+          $modules = @(
+            @{ Name = 'PSScriptAnalyzer' }
+            @{ Name = 'Pester'; MinimumVersion = '5.0' }
+          )
+          foreach ($m in $modules) {
+              if (-not (Get-Module -ListAvailable -Name $m.Name)) {
+                  Install-Module @m -Force -Scope CurrentUser -SkipPublisherCheck
+              }
+          }
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          if ($results) {
+              $results | Format-Table -AutoSize Severity, RuleName, ScriptName, Line, Message
+          } else {
+              Write-Host "No analyzer findings." -ForegroundColor Green
+          }
+          $errors = @($results | Where-Object Severity -eq 'Error')
+          if ($errors.Count -gt 0) {
+              Write-Error "PSScriptAnalyzer found $($errors.Count) error(s)."
+              exit 1
+          }
+
+      - name: Pester smoke tests
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = './tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = 'TestResults.xml'
+          Invoke-Pester -Configuration $config
+
+      - name: Upload Pester results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pester-results
+          path: TestResults.xml
+          if-no-files-found: ignore
