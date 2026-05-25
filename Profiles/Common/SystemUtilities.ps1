@@ -63,7 +63,31 @@ function df {
     }
     $barWidth = 17
 
-    Write-Host ('  {0,-5} {1,-12} {2,7} {3,7} {4,7} {5,5}  Usage' -f 'Drive','Label','Used','Free','Total','Use%') -ForegroundColor Cyan
+    # Label column width is dynamic: max of the actual labels in this run,
+    # bounded by min='Label' header length (5) and max 30 to prevent any one
+    # pathological label from blowing the column out. Replaces the previous
+    # hardcoded 12 which was too narrow for any "Storage" / "Backup" / etc.
+    # label longer than 11 characters.
+    #
+    # Caveat: emoji-prefixed labels still nudge alignment slightly — emoji
+    # count as 1-2 .Length chars but render as 2 terminal cells. Fully
+    # wcwidth-aware padding is a separate rabbit hole, left unfixed.
+    $labelWidth = [Math]::Min(30, [Math]::Max(
+        'Label'.Length,
+        ($disks | ForEach-Object {
+            if ([string]::IsNullOrWhiteSpace($_.VolumeName)) {
+                (& $typeLabel $_.DriveType).Length
+            } else {
+                $_.VolumeName.Length
+            }
+        } | Measure-Object -Maximum).Maximum
+    ))
+
+    $headerFmt = "  {0,-5} {1,-$labelWidth} {2,7} {3,7} {4,7} {5,5}  Usage"
+    $rowFmt    = "  {0,-5} {1,-$labelWidth} {2,7} {3,7} {4,7} {5,4}%  "
+    $emptyFmt  = "  {0,-5} {1,-$labelWidth} {2,7} {3,7} {4,7} {5,5}"
+
+    Write-Host ($headerFmt -f 'Drive', 'Label', 'Used', 'Free', 'Total', 'Use%') -ForegroundColor Cyan
 
     foreach ($d in $disks) {
         $size = [double] $d.Size
@@ -71,7 +95,7 @@ function df {
 
         if ($size -le 0) {
             # CD-ROM with no media, unplugged removable, disconnected network share, etc.
-            $line = '  {0,-5} {1,-12} {2,7} {3,7} {4,7} {5,5}' -f $d.DeviceID, (& $typeLabel $d.DriveType), '-', '-', '-', '-'
+            $line = $emptyFmt -f $d.DeviceID, (& $typeLabel $d.DriveType), '-', '-', '-', '-'
             Write-Host $line -ForegroundColor DarkGray
             continue
         }
@@ -82,10 +106,10 @@ function df {
         $bar    = ('█' * $filled) + ('░' * ($barWidth - $filled))
 
         $label = if ([string]::IsNullOrWhiteSpace($d.VolumeName)) { & $typeLabel $d.DriveType } else { $d.VolumeName }
-        if ($label.Length -gt 12) { $label = $label.Substring(0, 11) + '…' }
+        if ($label.Length -gt $labelWidth) { $label = $label.Substring(0, $labelWidth - 1) + '…' }
 
         $color = if ($pct -ge 90) { 'Red' } elseif ($pct -ge 70) { 'Yellow' } else { 'Green' }
-        $head  = '  {0,-5} {1,-12} {2,7} {3,7} {4,7} {5,4}%  ' -f $d.DeviceID, $label, (& $fmtSize $used), (& $fmtSize $free), (& $fmtSize $size), $pct
+        $head  = $rowFmt -f $d.DeviceID, $label, (& $fmtSize $used), (& $fmtSize $free), (& $fmtSize $size), $pct
         Write-Host -NoNewline $head
         Write-Host $bar -ForegroundColor $color
     }

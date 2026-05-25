@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-05-25
+
+### Fixed
+
+- **`df` Label column width is now dynamic** — sized to the longest label in the current result set, bounded by the `'Label'` header length (5) on the low end and 30 on the high end. The previous hardcoded width of 12 truncated any label longer than 11 characters (e.g. `🗄️ DeepStorage` → `🗄️ DeepStora…`). Format strings updated to interpolate the computed width.
+
+### Known limitation
+
+- Emoji-prefixed labels still nudge alignment slightly because emoji count as 1-2 `.Length` characters in PowerShell but render as 2 terminal cells. Fully wcwidth-aware padding is a separate rabbit hole, deliberately left unfixed; the widened column makes the issue cosmetic rather than functional.
+
 ## [0.1.10] - 2026-05-25
 
 ### Changed
@@ -124,7 +134,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.7...v0.1.8
