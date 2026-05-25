@@ -64,6 +64,7 @@ if (Test-Path -LiteralPath $userConfig) {
 if (-not $script:Config.ContainsKey('Prompt'))             { $script:Config.Prompt = 'Default' }
 if (-not $script:Config.ContainsKey('OhMyPoshTheme'))      { $script:Config.OhMyPoshTheme = 'default.omp.json' }
 if (-not $script:Config.ContainsKey('ExtraJumpFolders'))   { $script:Config.ExtraJumpFolders = @() }
+if (-not $script:Config.ContainsKey('RemoteServers'))      { $script:Config.RemoteServers = @() }
 if (-not $script:Config.ContainsKey('DisableStartupTips')) { $script:Config.DisableStartupTips = $false }
 if (-not $script:Config.ContainsKey('Features'))           { $script:Config.Features = @{} }
 

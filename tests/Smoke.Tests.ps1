@@ -34,6 +34,7 @@ BeforeAll {
     'tip','Show-ProfileTip',
     'Get-PubIP','Get-Uptime','Get-SysInfo','Find-File','Start-AdminTerminal',
     'Get-OrCreateSecret','Get-StoredSecrets','Remove-StoredSecret',
+    'rdp','rps',
     'ask','ll','la','touch','which'
 )
 `$missingCommands = @(`$expectedCommands | Where-Object { -not (Get-Command `$_ -ErrorAction Ignore) })

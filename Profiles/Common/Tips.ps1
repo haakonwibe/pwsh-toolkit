@@ -17,6 +17,8 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'Start-AdminTerminal  —  launch a new elevated Windows Terminal';                            E = 'Try: Start-AdminTerminal   (useful before winup on a non-elevated shell)' }
     [pscustomobject]@{ H = 'Get-OrCreateSecret  —  retrieve a SecretStore secret or prompt to create it';               E = 'Try: Get-OrCreateSecret -Name "Anthropic-API-Key" -AsPlainText' }
     [pscustomobject]@{ H = 'Get-StoredSecrets  —  list every secret you have stashed in SecretStore';                   E = 'Try: Get-StoredSecrets' }
+    [pscustomobject]@{ H = 'rdp  —  Remote Desktop picker driven by config.psd1''s RemoteServers list';                 E = 'Try: rdp   (also: rdp dc, rdp build — fuzzy match)' }
+    [pscustomobject]@{ H = 'rps  —  PowerShell Remoting picker (Enter-PSSession) — same data as rdp';                   E = 'Try: rps   (User on the server entry pre-fills Get-Credential)' }
     [pscustomobject]@{ H = 'Connect-Graph  —  Microsoft Graph login with the right scopes preset';                      E = 'Try: Connect-Graph   (then: Get-TenantOverview)' }
     [pscustomobject]@{ H = 'Connect-Exchange  —  Exchange Online login';                                                E = 'Try: Connect-Exchange' }
     [pscustomobject]@{ H = 'Get-TenantOverview  —  comprehensive tenant statistics in one shot';                        E = 'Try: Get-TenantOverview   (after Connect-Graph)' }

@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-25
+
+### Added
+
+- **`rdp` and `rps`** — remote-server shortcuts driven by a new `RemoteServers` list in `config.psd1`. No-arg invocation opens the same alt-screen-buffer picker as `j` (digit shortcuts 1-9, arrow nav, Esc cancel). `rdp <name>` and `rps <name>` do fuzzy matching against label or address.
+  - `rdp` launches `mstsc /v:<address>` (Windows handles the credential prompt; use Credential Manager / `cmdkey` to persist).
+  - `rps` launches `Enter-PSSession -ComputerName <address>`. When an entry has a `User` field, `rps` pre-fills `Get-Credential` with that username.
+  - No credential helpers in v1 — let Windows / `Get-Credential` prompt as needed.
+- `RemoteServers = @()` slot in `config.example.psd1` with commented example entries, plus a hard-fallback default in the loader so `$Config.RemoteServers` is always at least an empty array.
+
 ## [0.1.3] - 2026-05-25
 
 ### Added
@@ -56,7 +66,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.0...v0.1.1

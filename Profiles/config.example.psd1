@@ -64,6 +64,27 @@
         # @{ Label = 'VMs';    Path = 'D:\VMs' }
     )
 
+    # ─── Remote servers (rdp, rps) ───────────────────────────────────────────
+    # Destinations for the `rdp` (Remote Desktop / mstsc) and `rps` (PowerShell
+    # Remoting / Enter-PSSession) helpers. Same literals-only constraint as
+    # ExtraJumpFolders.
+    #
+    # Each entry takes:
+    #   Label   — short display name shown in the picker
+    #   Address — DNS name or IP that mstsc / Enter-PSSession will connect to
+    #   User    — optional. rps pre-fills Get-Credential with this name; rdp
+    #             ignores it (use Windows Credential Manager / cmdkey if you
+    #             want RDP creds saved).
+    #
+    # No credential helpers in v1 — let Windows / Get-Credential prompt as
+    # needed. SSH transport for PSRemoting is also out of scope; rps uses the
+    # default WinRM transport.
+    RemoteServers = @(
+        # @{ Label = 'Lab DC';      Address = 'dc01.lab.local';   User = 'lab\admin' }
+        # @{ Label = 'Build';       Address = 'build.contoso.com' }
+        # @{ Label = 'Jumphost';    Address = '10.0.5.20' }
+    )
+
     # ─── Startup tips ────────────────────────────────────────────────────────
     # The rotating tip shown at shell startup. The env var $env:PSPROFILE_NO_TIPS
     # also disables tips and overrides this setting (handy for CI / scripts).

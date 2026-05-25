@@ -54,6 +54,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 | **`Find-File <name>`** | Recursive filename search from the current directory. |
 | **`Start-AdminTerminal`** | Launch a new elevated Windows Terminal. |
 | **`Get-OrCreateSecret`** | Retrieve a SecretStore secret or prompt to create it. Companion: `Get-StoredSecrets`, `Remove-StoredSecret`. |
+| **`rdp` / `rps`** | Remote-server shortcuts driven by `config.psd1`'s `RemoteServers` list. `rdp` launches `mstsc`, `rps` launches `Enter-PSSession`. No arg → picker (digit shortcuts, arrow keys, Esc). `rdp name` → fuzzy match on label/address. |
 | **`ask <question>`** | Quick reference via the ch.at API. `ask -Brief "..."` for one-line answers. |
 | **`docs` / `desktop` / `downloads` / `onedrive` / `home`** | Named navigation shortcuts. OneDrive paths auto-detect your Business org from `$env:OneDriveCommercial`. |
 | **`tip`** | Re-roll the rotating profile tip. Set `$env:PSPROFILE_NO_TIPS=1` to silence at startup. |
