@@ -66,7 +66,38 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 
 ## Screenshots
 
-*(Coming soon — `j`, `peek`, `df`, `winup`, and the OMP prompt are the obvious candidates. Drop PNGs in `docs/screenshots/` and reference them here.)*
+Captured against a clean Windows Terminal with **MesloLGMDZ Nerd Font Mono** and `Prompt = 'OhMyPosh'` — i.e. exactly what `install.ps1 -InstallOhMyPosh` gives you. See [`docs/screenshots/CAPTURE-GUIDE.md`](docs/screenshots/CAPTURE-GUIDE.md) if you want to retake or extend.
+
+### The shell at rest
+
+![pwsh-toolkit prompt with a startup tip](docs/screenshots/prompt-hero.png)
+
+A fresh tab: rotating profile tip on top, the polished Oh My Posh prompt with `pwsh` + user + battery + clock segments below.
+
+### Folder jumper (`j`)
+
+![j picker showing bookmark destinations](docs/screenshots/j-picker.png)
+
+Press `1`-`9` for an instant jump, or arrow + Enter. Renders on the terminal's alternate screen buffer so your scrollback stays intact when the picker exits. `j <text>` (or any literal path) skips the picker entirely.
+
+### Disk-free overview (`df`)
+
+![df with colored usage bars](docs/screenshots/df.png)
+
+Fixed drives by default with colored usage bars (green ≤70%, yellow 71-89%, red ≥90%). `df -All` adds removable, network, and CD-ROM drives.
+
+### Archive peek (`peek`)
+
+![peek -List output listing an archive](docs/screenshots/peek-list.png)
+
+Dispatches to WinRAR for `.rar`, 7-Zip for everything else, and falls back to `Expand-Archive` for plain `.zip` if neither is installed. `peek <archive>` extracts to `$env:TEMP\peek\…` and jumps you in.
+
+### Interactive winget upgrade (`winup`)
+
+![winup picker with toggled selections](docs/screenshots/winup.png)
+
+Space to toggle, A toggles all, Enter to confirm. CMTrace-XML logs land in `C:\ProgramData\WingetUpgrade\Logs\`. `winup -All` skips the picker.
+
 
 ---
 

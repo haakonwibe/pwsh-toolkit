@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-05-25
+
+### Added
+
+- **Screenshots in the README.** Five shots captured against a clean Windows Terminal + MesloLGMDZ Nerd Font Mono + `Prompt = 'OhMyPosh'` (the post-`install.ps1 -InstallOhMyPosh` baseline): prompt-with-tip hero, `j` picker mid-selection, `df` with colored usage bars, `peek -List` output, and `winup` picker with toggled selections. README's `## Screenshots` section now renders inline image blocks with short captions for each.
+- **`docs/screenshots/CAPTURE-GUIDE.md`** — terminal-setup spec, capture-tool recommendations, and per-shot instructions. Persistent in the repo so future contributors can retake or extend the set against the same baseline.
+
 ## [0.1.8] - 2026-05-25
 
 ### Added
@@ -110,7 +117,8 @@ Initial public release. Extracted and reorganized from a larger private reposito
 - **Documentation**: top-level [README.md](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design decisions + load-bearing conventions), [`Profiles/LOADING.md`](Profiles/LOADING.md) (loader internals), per-folder READMEs for OhMyPosh/Machines/Hosts.
 - **Continuous integration**: PSScriptAnalyzer lint + Pester smoke tests on `windows-latest` via GitHub Actions.
 
-[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/haakonwibe/pwsh-toolkit/compare/v0.1.5...v0.1.6
