@@ -53,13 +53,15 @@ function wtf {
         }
 
         # API key resolution: SecretStore first (preferred), env var fallback.
+        # No try/catch wrapper — Get-OrCreateSecret handles its own failure
+        # modes via Write-Error + return $null, and we want those diagnostics
+        # to reach the user. A previous version wrapped this in
+        # try { ... -ErrorAction Stop } catch {} and silently swallowed the
+        # specific "Failed to unlock SecretStore: <reason>" messages, leaving
+        # the user with only the generic "No Anthropic API key found" below.
         $apiKey = $null
         if (Get-Command Get-OrCreateSecret -ErrorAction Ignore) {
-            try {
-                $apiKey = Get-OrCreateSecret -Name 'Anthropic-API-Key' -AsPlainText -ErrorAction Stop
-            } catch {
-                # SecretStore unavailable / vault locked / etc. — fall through.
-            }
+            $apiKey = Get-OrCreateSecret -Name 'Anthropic-API-Key' -AsPlainText
         }
         if (-not $apiKey -and $env:ANTHROPIC_API_KEY) {
             $apiKey = $env:ANTHROPIC_API_KEY

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-05-26
+
+### Fixed
+
+- **`wtf` no longer swallows SecretStore diagnostics.** The API-key resolution path wrapped `Get-OrCreateSecret -ErrorAction Stop` in an empty try/catch with a "fall through" comment. Looked harmless, but empirical testing showed `-ErrorAction Stop` doesn't merely promote `Write-Error` to a terminating exception — it suppresses the original error message entirely when caught. So when the vault was locked, an unlock failed, or the store was otherwise unhappy, `Get-OrCreateSecret`'s specific `Write-Error "Failed to unlock SecretStore: <reason>"` (and similar) vanished, leaving the user with only `No Anthropic API key found` and no clue what actually broke. Dropped the try/catch and `-ErrorAction Stop` — `Get-OrCreateSecret` already handles its own errors gracefully (Write-Error + return $null), so the diagnostic now reaches the user and `$apiKey` falls through to the env-var path on failure exactly as before.
+
 ## [0.1.23] - 2026-05-26
 
 ### Changed
