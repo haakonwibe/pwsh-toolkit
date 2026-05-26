@@ -146,7 +146,7 @@ The profile loads fine without any of these — the relevant feature just stays 
 | Want | Install |
 |---|---|
 | `Prompt = 'OhMyPosh'` (the polished prompt) | `.\install.ps1 -InstallOhMyPosh` does the whole setup. (Manual: `winget install JanDeDobbeleer.OhMyPosh` + `oh-my-posh font install Meslo --user` + `Install-Module Terminal-Icons`.) |
-| `tagdl` (AI Downloads tagger) | `Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore`, then store an `Anthropic-API-Key` secret with `Get-OrCreateSecret -Name 'Anthropic-API-Key'` |
+| `tagdl` (AI Downloads tagger) and `wtf` (Claude-powered error explainer) | `Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore`, then store an `Anthropic-API-Key` secret with `Get-OrCreateSecret -Name 'Anthropic-API-Key'`. Both reuse the same key. |
 | `peek` for `.rar` / `.7z` / `.tar.gz` / ISO / etc. (not just `.zip`) | `winget install 7zip.7zip` (and/or WinRAR for `.rar`) |
 | M365 helpers (`Connect-Graph`, `Get-TenantOverview`) | `Install-Module Microsoft.Graph, ExchangeOnlineManagement` |
 
@@ -167,7 +167,7 @@ For higher-assurance storage (separate vault password, keys not derived from you
 If you want the extra layer (vault password on top of DPAPI), run once after setup:
 
 ```powershell
-Initialize-SecretStore -Authentication Password
+Set-SecretStoreConfiguration -Authentication Password
 ```
 
 Existing vaults aren't touched — the default only applies on first-time vault creation. To change an already-configured vault, use the command above (with the current password if there is one).

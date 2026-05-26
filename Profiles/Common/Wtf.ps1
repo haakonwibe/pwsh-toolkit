@@ -66,8 +66,13 @@ function wtf {
         }
         if (-not $apiKey) {
             Write-Host '  No Anthropic API key found.' -ForegroundColor Yellow
-            Write-Host '  Set up via SecretStore:' -ForegroundColor DarkGray
-            Write-Host "      Get-OrCreateSecret -Name 'Anthropic-API-Key' -AsPlainText" -ForegroundColor White
+            if (Get-Command Get-SecretVault -ErrorAction Ignore) {
+                Write-Host '  Set up via SecretStore:' -ForegroundColor DarkGray
+                Write-Host "      Get-OrCreateSecret -Name 'Anthropic-API-Key' -AsPlainText" -ForegroundColor White
+            } else {
+                Write-Host '  Install SecretStore modules to enable secure storage:' -ForegroundColor DarkGray
+                Write-Host '      Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore -Scope CurrentUser' -ForegroundColor White
+            }
             Write-Host '  Or set $env:ANTHROPIC_API_KEY for the session.' -ForegroundColor DarkGray
             return
         }

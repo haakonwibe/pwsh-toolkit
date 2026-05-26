@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-05-26
+
+### Changed
+
+- **`Find-File` now highlights the search term in matched paths.** Yellow-on-default for every case-insensitive occurrence in each result, so a `Find-File wtf` makes the `Wtf` portion of `Profiles\Common\Wtf.ps1` jump out at a glance. Pipelinability is preserved: when piped (`| Select-String`, etc.) or redirected (`> out.txt`), output reverts to plain string emission so downstream consumers see paths, not ANSI escapes. Regex special characters in the search term are escaped, so `Find-File .config` still does a literal substring match.
+- **`Get-OrCreateSecret` no longer announces every successful retrieval.** The previous `✅ Retrieved secret: <Name>` line printed on every `wtf` / `tagdl` invocation — noise on the happy path. Creation, unlock, and error messages stay (those are events worth knowing about); the boring "I read a value from a vault" case is now silent.
+- **First-time secret-entry prompt now explains where the key goes.** Previously the prompt was just `🔐 Secret 'Anthropic-API-Key' not found. Please enter it to store securely:` — abrupt for someone running a toolkit command on a fresh machine and reasonably wondering what's about to happen to their API key. Added one line of context: `Stored locally via DPAPI-encrypted SecretStore — scoped to your Windows account, never written in plaintext, never synced.` Tied to README's Security section for the full threat model.
+
+### Fixed
+
+- **`Get-OrCreateSecret` and `wtf` now surface the actual fix when SecretManagement modules aren't installed.** On a fresh machine `Get-SecretVault` doesn't exist, and the previous behavior was an opaque `WARNING: Failed to set up SecretStore vault: The term 'Get-SecretVault' is not recognized...` that hid the one-liner needed to recover. Both functions now detect the missing module up front and print `Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore -Scope CurrentUser`. `wtf` additionally rewrites its "no API key" fallback so it doesn't keep suggesting `Get-OrCreateSecret` when the modules required to run it are absent.
+- **Passwordless vault initialization actually works now.** Two compounding bugs:
+  1. `Get-OrCreateSecret` was calling `Initialize-SecretStore -Authentication None -Interaction None -Force`, a cmdlet that doesn't exist in `Microsoft.PowerShell.SecretStore` 1.0.x. The call was throwing "term not recognized" and the surrounding try/catch swallowed it silently.
+  2. The obvious replacement, `Set-SecretStoreConfiguration -Authentication None`, can't bootstrap a never-created store into passwordless mode — it reads the not-yet-existent store's configuration first (default = Password) and triggers the module's lazy `Creating a new SecretStore vault. A password is required by the current store configuration. Enter password:` prompt before our config takes effect. Same chicken-egg trap.
+
+  Real fix: use `Reset-SecretStore -Authentication None -Interaction None -Force` on the fresh-install path. It's the only SecretStore cmdlet that creates the on-disk file with the requested auth policy applied in one shot. Gated on the absence of the localstore data file (`$env:LOCALAPPDATA\Microsoft\PowerShell\secretmanagement\localstore\`) so it never wipes an existing user's secrets. Also fixed two stale references to `Initialize-SecretStore` (README's "Security" section, and the `Test-SecretStoreInteractive` error message).
+
 ## [0.1.22] - 2026-05-25
 
 ### Reverted

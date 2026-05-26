@@ -11,7 +11,7 @@
 # function below to fail fast instead of hanging in CI / piped-input contexts.
 function Test-SecretStoreInteractive {
     if ([Console]::IsInputRedirected) {
-        Write-Error "SecretStore is locked and stdin is not interactive. Run 'Unlock-SecretStore' in a terminal first, or 'Initialize-SecretStore -Authentication None' once to skip the password prompt."
+        Write-Error "SecretStore is locked and stdin is not interactive. Run 'Unlock-SecretStore' in a terminal first, or 'Set-SecretStoreConfiguration -Authentication None' once to skip the password prompt."
         return $false
     }
     return $true
@@ -40,6 +40,15 @@ function Get-OrCreateSecret {
         [switch]$AsPlainText
     )
 
+    # Bootstrap check. Without the SecretManagement module, every cmdlet below
+    # blows up with "term 'Get-SecretVault' is not recognized" — an opaque
+    # error that hides the actual fix (install the two modules once).
+    if (-not (Get-Command Get-SecretVault -ErrorAction Ignore)) {
+        Write-Host "  SecretManagement modules aren't installed. Install them once:" -ForegroundColor Yellow
+        Write-Host "      Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore -Scope CurrentUser" -ForegroundColor Cyan
+        return $null
+    }
+
     # Ensure SecretStore vault exists. Don't silently steal the -DefaultVault
     # slot if another vault is already default — that would override any
     # enterprise / 1Password integration without notice.
@@ -60,26 +69,37 @@ function Get-OrCreateSecret {
             # the vault file to your Windows user account, so the optional
             # vault password is largely second-factor theater for personal
             # use. Users who want the extra layer can switch via:
-            #     Initialize-SecretStore -Authentication Password
+            #     Set-SecretStoreConfiguration -Authentication Password
             # README's Security section documents the threat model.
             #
-            # Two reasons to wrap this defensively:
-            # 1. Register-SecretVault registers the module as a vault provider
-            #    but doesn't import its cmdlets — Initialize-SecretStore can
-            #    fail with "term not recognized" on the first call in a fresh
-            #    session. Import-Module forces the load.
-            # 2. On a pre-existing password-protected store (user had one set
-            #    up before v0.1.10), Initialize-SecretStore -Authentication
-            #    None can't switch modes without the current password —
-            #    swallow that failure; the existing store stays usable.
+            # Cmdlet choice — this is subtle. SecretStore 1.0.x's
+            # Set-SecretStoreConfiguration cannot bootstrap a never-created
+            # store into passwordless mode: it reads the not-yet-existent
+            # store's configuration first (which falls back to the default —
+            # Password required) and triggers the module's lazy "Creating a
+            # new vault... A password is required by the current store
+            # configuration. Enter password:" prompt before our requested
+            # config can apply. Reset-SecretStore is the only cmdlet that
+            # creates the on-disk store file with the requested auth policy
+            # applied in one shot, so we use it for the fresh-install path.
+            # We gate on the localstore data file's absence because Reset
+            # would otherwise wipe existing secrets — and an existing
+            # password-protected store is the user's choice to leave alone.
             try {
                 Import-Module Microsoft.PowerShell.SecretStore -ErrorAction Stop
-                Initialize-SecretStore -Authentication None -Interaction None -Force -ErrorAction Stop
+                $storeDataPath = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerShell\secretmanagement\localstore'
+                $storeIsFresh = -not (Test-Path -LiteralPath $storeDataPath) -or
+                                -not (Get-ChildItem -LiteralPath $storeDataPath -File -ErrorAction Ignore)
+                if ($storeIsFresh) {
+                    Reset-SecretStore -Authentication None -Interaction None -Force -ErrorAction Stop
+                }
+                # Else: existing store — don't touch it. If it's
+                # password-protected the rest of Get-OrCreateSecret will
+                # unlock it interactively or surface the locked state.
             }
             catch {
                 # Best-effort: vault is registered, rest of function still
-                # works. Silent on purpose — users with existing
-                # password-protected stores don't need to see a warning.
+                # works. Silent on purpose.
             }
         }
     }
@@ -120,7 +140,6 @@ function Get-OrCreateSecret {
         }
 
         if ($secret) {
-            Write-Host "✅ Retrieved secret: $Name" -ForegroundColor Green
             return $secret
         }
     }
@@ -136,8 +155,12 @@ function Get-OrCreateSecret {
         }
     }
 
-    # Secret doesn't exist, prompt for it
-    Write-Host "🔐 Secret '$Name' not found. Please enter it to store securely:" -ForegroundColor Cyan
+    # Secret doesn't exist, prompt for it. The context line below answers the
+    # obvious "wait, why is my terminal asking for a sensitive key?" question
+    # someone running a toolkit command for the first time will reasonably
+    # ask — see README's Security section for the full threat model.
+    Write-Host "🔐 Secret '$Name' not found. Please enter it to store securely." -ForegroundColor Cyan
+    Write-Host "  Stored locally via DPAPI-encrypted SecretStore — scoped to your Windows account, never written in plaintext, never synced." -ForegroundColor DarkGray
     $secretValue = Read-Host -AsSecureString -Prompt "Enter secret value"
 
     try {

@@ -30,10 +30,28 @@ function Get-Uptime {
     Write-Output "System uptime: $($uptime.Days) days, $($uptime.Hours) hours, $($uptime.Minutes) minutes"
 }
 
-# Quick file search (very handy)
-function Find-File($name) {
-    Get-ChildItem -Recurse -Filter "*$name*" -ErrorAction SilentlyContinue |
-    ForEach-Object { Write-Output $_.FullName }
+# Quick file search (very handy). Highlights the search term in matched paths
+# when running interactively; falls back to plain string emission when piped
+# or redirected, so `Find-File foo | Select-String bar` and `Find-File foo >
+# out.txt` keep working.
+function Find-File {
+    [CmdletBinding()]
+    param([string] $Name)
+
+    $highlight = $MyInvocation.PipelinePosition -eq $MyInvocation.PipelineLength -and
+                 -not [Console]::IsOutputRedirected
+    $pattern   = if ($highlight) { [regex]::new([regex]::Escape($Name), 'IgnoreCase') } else { $null }
+
+    Get-ChildItem -Recurse -Filter "*$Name*" -ErrorAction SilentlyContinue | ForEach-Object {
+        if (-not $highlight) { $_.FullName; return }
+        $path = $_.FullName; $i = 0
+        foreach ($m in $pattern.Matches($path)) {
+            Write-Host $path.Substring($i, $m.Index - $i) -NoNewline
+            Write-Host $path.Substring($m.Index, $m.Length) -NoNewline -ForegroundColor Yellow
+            $i = $m.Index + $m.Length
+        }
+        Write-Host $path.Substring($i)
+    }
 }
 
 # System shortcuts
