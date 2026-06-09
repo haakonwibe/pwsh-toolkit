@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pwsh-toolkit — Modular PowerShell profile + toolkit for Windows</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
+            50% { box-shadow: 0 0 40px rgba(59, 130, 246, 0.6); }
+        }
+
+        @keyframes gradient-shift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .floating { animation: float 6s ease-in-out infinite; }
+        .floating-delayed { animation: float 6s ease-in-out infinite; animation-delay: -3s; }
+        .pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+
+        .gradient-bg {
+            background: linear-gradient(-45deg, #0f172a, #1e293b, #0f172a, #1e3a5f);
+            background-size: 400% 400%;
+            animation: gradient-shift 15s ease infinite;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .code-block {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .highlight-blue { color: #60a5fa; }
+        .highlight-green { color: #4ade80; }
+        .highlight-purple { color: #c084fc; }
+        .highlight-orange { color: #fb923c; }
+        .highlight-cyan { color: #22d3ee; }
+        .highlight-gray { color: #94a3b8; }
+        .highlight-yellow { color: #facc15; }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen text-white overflow-x-hidden">
+
+    <!-- Hero Section -->
+    <div class="relative">
+        <!-- Background decorative elements -->
+        <div class="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl floating"></div>
+        <div class="absolute top-40 right-20 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl floating-delayed"></div>
+        <div class="absolute bottom-0 left-1/3 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl floating"></div>
+
+        <div class="relative z-10 max-w-7xl mx-auto px-8 pt-16 pb-12">
+
+            <!-- Header -->
+            <div class="text-center mb-16">
+                <div class="inline-flex flex-wrap justify-center items-center gap-3 mb-6">
+                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
+                        <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                        <span class="text-sm text-gray-300">Open Source • MIT License</span>
+                    </div>
+                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
+                        <span class="text-sm mono font-semibold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">v0.1.63</span>
+                    </div>
+                </div>
+
+                <h1 class="text-6xl font-black mb-4 tracking-tight">
+                    <span class="text-white">pwsh</span><span class="bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-500 bg-clip-text text-transparent">-toolkit</span>
+                </h1>
+
+                <p class="text-xl text-gray-400 max-w-3xl mx-auto mb-8">
+                    A modular PowerShell profile + toolkit for Windows. One config-driven loader,
+                    polished prompt, a folder jumper that respects your scrollback, and friends.
+                </p>
+
+                <div class="flex flex-wrap items-center justify-center gap-8 sm:gap-12 mb-10">
+                    <div class="text-center">
+                        <div class="text-5xl font-black bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent leading-none">56</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-widest mt-2">commands at your fingertips</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-5xl font-black bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent leading-none">1</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-widest mt-2">declarative config file</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-5xl font-black bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent leading-none">0</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-widest mt-2">hardcoded paths to fix</div>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-center gap-4 text-sm">
+                    <div class="flex items-center gap-2 px-4 py-2 rounded-lg glass">
+                        <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <span>PowerShell 7+</span>
+                    </div>
+                    <div class="flex items-center gap-2 px-4 py-2 rounded-lg glass">
+                        <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                        <span>Windows 10/11</span>
+                    </div>
+                    <div class="flex items-center gap-2 px-4 py-2 rounded-lg glass">
+                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        <span>One-Command Install</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- The Problem vs Solution -->
+            <div class="grid md:grid-cols-2 gap-8 mb-16">
+                <!-- Traditional Approach -->
+                <div class="relative">
+                    <div class="absolute -top-3 left-4 px-3 py-1 bg-red-500/20 border border-red-500/30 rounded-full text-red-400 text-xs font-semibold">
+                        ❌ TYPICAL $PROFILE
+                    </div>
+                    <div class="code-block rounded-xl p-6 h-full">
+                        <pre class="mono text-sm text-gray-400 leading-relaxed"><code><span class="highlight-orange"># $PROFILE — grown organically, one box at a time</span>
+<span class="highlight-cyan">Set-Alias</span> ll Get-ChildItem
+<span class="highlight-cyan">Import-Module</span> Terminal-Icons
+oh-my-posh init pwsh --config <span class="highlight-green">'C:\theme.omp.json'</span> | iex
+<span class="highlight-cyan">Set-PSReadLineOption</span> -PredictionSource History
+
+<span class="highlight-purple">function</span> <span class="highlight-blue">docs</span> { <span class="highlight-cyan">Set-Location</span> <span class="highlight-green">"$HOME\OneDrive - Contoso\Documents"</span> }
+<span class="highlight-purple">function</span> <span class="highlight-blue">gh</span>   { <span class="highlight-cyan">Set-Location</span> <span class="highlight-green">'C:\GitHub'</span> }
+
+<span class="highlight-orange"># hardcoded paths · nothing shared · no overrides</span>
+<span class="highlight-orange"># new machine? copy the file, fix every path by hand</span></code></pre>
+                    </div>
+                </div>
+
+                <!-- pwsh-toolkit -->
+                <div class="relative">
+                    <div class="absolute -top-3 left-4 px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full text-green-400 text-xs font-semibold">
+                        ✓ PWSH-TOOLKIT
+                    </div>
+                    <div class="code-block rounded-xl p-6 h-full pulse-glow">
+                        <pre class="mono text-sm text-gray-300 leading-relaxed"><code><span class="highlight-orange"># Profiles/config.psd1 — one declarative file</span>
+@{
+    <span class="highlight-cyan">Prompt</span>        = <span class="highlight-green">'OhMyPosh'</span>   <span class="highlight-orange"># or 'Custom' / 'Default'</span>
+    <span class="highlight-cyan">OhMyPoshTheme</span> = <span class="highlight-green">'Random'</span>     <span class="highlight-orange"># fresh prompt every shell</span>
+
+    <span class="highlight-cyan">ExtraJumpFolders</span> = @(        <span class="highlight-orange"># j — bookmarked folders</span>
+        @{ <span class="highlight-cyan">Label</span> = <span class="highlight-green">'Work'</span>; <span class="highlight-cyan">Path</span> = <span class="highlight-green">'D:\Work'</span> }
+    )
+    <span class="highlight-cyan">ProjectRoots</span> = @(<span class="highlight-green">'C:\GitHub'</span>)  <span class="highlight-orange"># prj — jump to any repo</span>
+
+    <span class="highlight-cyan">DisableStartupTips</span> = <span class="highlight-purple">$false</span>      <span class="highlight-orange"># the rotating tip</span>
+    <span class="highlight-cyan">Features</span> = @{ <span class="highlight-cyan">DisableM365</span> = <span class="highlight-purple">$false</span> }  <span class="highlight-orange"># feature toggles</span>
+}
+<span class="highlight-orange"># same setup on every machine — j · peek · df · winup</span></code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Features Grid -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-10">
+                    <span class="text-gray-400">What's in</span> the box<span class="text-blue-400">?</span>
+                </h2>
+
+                <div class="grid md:grid-cols-3 gap-6">
+
+                    <!-- Feature 1: Config-driven loader -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">Config-driven loader</h3>
+                        <p class="text-gray-400 text-sm">One <span class="mono">config.psd1</span> picks the prompt (Oh&nbsp;My&nbsp;Posh, custom, default), OneDrive org, jump folders, and feature toggles. ToolkitRoot and OneDriveOrg auto-detect from environment.</p>
+                    </div>
+
+                    <!-- Feature 2: Folder jumper -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">Folder jumper (j)</h3>
+                        <p class="text-gray-400 text-sm">Interactive picker with digit shortcuts <span class="mono">1-9</span>, arrow nav, or direct fuzzy match: <span class="mono">j prog</span>. Renders on the alternate screen buffer — your scrollback survives. Browser-style <span class="mono">jb</span>/<span class="mono">jf</span> history.</p>
+                    </div>
+
+                    <!-- Feature 3: Archive peek -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">Archive previewer (peek)</h3>
+                        <p class="text-gray-400 text-sm">Extracts any archive to a temp folder and drops you inside. WinRAR for <span class="mono">.rar</span>, 7-Zip for the rest, <span class="mono">Expand-Archive</span> fallback. Plus <span class="mono">-List</span> / <span class="mono">-Active</span> / <span class="mono">-Clean</span>.</p>
+                    </div>
+
+                    <!-- Feature 4: Smart install -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">Smart install, clean uninstall</h3>
+                        <p class="text-gray-400 text-sm">Symlink if you can (admin / Developer Mode), dot-source stub otherwise — both live-edit, no fuss. Optional Oh My Posh + Nerd Font + Terminal-Icons in one prompt. <span class="mono">install.ps1 -Uninstall</span> backs out cleanly and restores your old profile.</p>
+                    </div>
+
+                    <!-- Feature 5: AI Downloads tagger -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">AI Downloads tagger</h3>
+                        <p class="text-gray-400 text-sm"><span class="mono">tagdl</span> writes Claude-generated, BBS-style descriptions to NTFS streams plus a portable index CSV. Browse with <span class="mono">dird</span> or newest-first <span class="mono">fr</span>. ~$0.001 per file.</p>
+                    </div>
+
+                    <!-- Feature 6: Per-machine / per-host overrides -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500/20 to-pink-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">Per-machine + per-host overrides</h3>
+                        <p class="text-gray-400 text-sm"><span class="mono">Machines/&lt;NAME&gt;.ps1</span> for per-machine tweaks, <span class="mono">Hosts/&lt;HostName&gt;.ps1</span> for per-host (VS&nbsp;Code, Terminal, ISE) — dot-sourced after Common, with full access to everything the loader defines.</p>
+                    </div>
+
+                    <!-- Feature 7: Oh My Posh themes / random prompt -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">Oh My Posh, randomized</h3>
+                        <p class="text-gray-400 text-sm"><span class="mono">Update-PoshThemes</span> pulls the full ~120-theme gallery. Set <span class="mono">OhMyPoshTheme = 'Random'</span> for a fresh prompt each shell — it names the one it rolled so you can pin it. Browse and switch live with <span class="mono">Set-PoshTheme</span>.</p>
+                    </div>
+
+                    <!-- Feature 8: built-in discovery -->
+                    <div class="feature-card rounded-2xl p-6">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2">Built-in discovery</h3>
+                        <p class="text-gray-400 text-sm"><span class="mono">toolkit</span> lists every command grouped by area with a one-line synopsis — the <span class="mono">Get-Command</span> for a profile that isn't a module. Every command also has <span class="mono">Get-Help</span>, plus a rotating startup <span class="mono">tip</span>.</p>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Architecture Flow -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-10">
+                    <span class="text-gray-400">From clone to</span> working shell
+                </h2>
+
+                <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-0">
+                    <!-- Step 1 -->
+                    <div class="flex flex-col items-center">
+                        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mb-3 shadow-lg shadow-blue-500/30">
+                            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207"/>
+                            </svg>
+                        </div>
+                        <span class="text-sm font-medium mono">git clone</span>
+                        <span class="text-xs text-gray-500">Anywhere on disk</span>
+                    </div>
+
+                    <div class="hidden md:block w-24 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 mx-2"></div>
+                    <div class="md:hidden h-8 w-0.5 bg-gradient-to-b from-blue-500 to-purple-500 my-2"></div>
+
+                    <!-- Step 2 -->
+                    <div class="flex flex-col items-center">
+                        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mb-3 shadow-lg shadow-purple-500/30">
+                            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <span class="text-sm font-medium mono">.\install.ps1</span>
+                        <span class="text-xs text-gray-500">Symlink or stub</span>
+                    </div>
+
+                    <div class="hidden md:block w-24 h-0.5 bg-gradient-to-r from-purple-500 to-cyan-500 mx-2"></div>
+                    <div class="md:hidden h-8 w-0.5 bg-gradient-to-b from-purple-500 to-cyan-500 my-2"></div>
+
+                    <!-- Step 3 -->
+                    <div class="flex flex-col items-center">
+                        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center mb-3 shadow-lg shadow-cyan-500/30">
+                            <span class="mono text-xl font-bold">@{...}</span>
+                        </div>
+                        <span class="text-sm font-medium mono">config.psd1</span>
+                        <span class="text-xs text-gray-500">Edit or leave</span>
+                    </div>
+
+                    <div class="hidden md:block w-24 h-0.5 bg-gradient-to-r from-cyan-500 to-green-500 mx-2"></div>
+                    <div class="md:hidden h-8 w-0.5 bg-gradient-to-b from-cyan-500 to-green-500 my-2"></div>
+
+                    <!-- Step 4 -->
+                    <div class="flex flex-col items-center">
+                        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center mb-3 shadow-lg shadow-green-500/30">
+                            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <span class="text-sm font-medium">🚀 New shell</span>
+                        <span class="text-xs text-gray-500">Tip + prompt</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Featured helpers tile grid -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-2">
+                    <span class="text-gray-400">Daily-driver</span> helpers
+                </h2>
+                <p class="text-center text-gray-500 mb-10">The ones you'll actually type a dozen times a day</p>
+
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">🎯</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">j</div>
+                        <div class="text-xs text-gray-500 mt-1">Folder jumper</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">📦</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">peek</div>
+                        <div class="text-xs text-gray-500 mt-1">Archive viewer</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">💾</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">df</div>
+                        <div class="text-xs text-gray-500 mt-1">Disk free</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">⬆️</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">winup</div>
+                        <div class="text-xs text-gray-500 mt-1">Winget picker</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">🤖</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">tagdl</div>
+                        <div class="text-xs text-gray-500 mt-1">AI tagger</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">📂</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">dird&nbsp;/&nbsp;fr</div>
+                        <div class="text-xs text-gray-500 mt-1">Listings</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">💡</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">tip</div>
+                        <div class="text-xs text-gray-500 mt-1">Reminders</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">🖥️</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">rdp&nbsp;/&nbsp;rps</div>
+                        <div class="text-xs text-gray-500 mt-1">Remote servers</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">🤔</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">wtf</div>
+                        <div class="text-xs text-gray-500 mt-1">Error → Claude</div>
+                    </div>
+                    <div class="glass rounded-xl p-4 text-center hover:bg-white/10 transition-colors cursor-default">
+                        <div class="text-2xl mb-2">📓</div>
+                        <div class="text-xs text-gray-300 mono font-semibold">note&nbsp;/&nbsp;today</div>
+                        <div class="text-xs text-gray-500 mt-1">Daily journal</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Complete command reference -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold text-center mb-2">
+                    <span class="text-gray-400">Every command,</span> one screen
+                </h2>
+                <p class="text-center text-gray-500 mb-10">All 56, grouped by area — the same list <span class="mono text-gray-400">toolkit</span> prints in your shell</p>
+
+                <div class="glass rounded-2xl p-6 md:p-8 columns-1 md:columns-2 lg:columns-3 gap-8">
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-blue-400 mb-2">Shell &amp; quick commands</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">ll</span> <span class="text-gray-500">— detailed directory table</span></li>
+                            <li><span class="mono text-gray-200">la</span> <span class="text-gray-500">— list incl. hidden &amp; system</span></li>
+                            <li><span class="mono text-gray-200">lh</span> <span class="text-gray-500">— only hidden &amp; system entries</span></li>
+                            <li><span class="mono text-gray-200">touch</span> <span class="text-gray-500">— create / bump timestamp</span></li>
+                            <li><span class="mono text-gray-200">which</span> <span class="text-gray-500">— what backs a command</span></li>
+                            <li><span class="mono text-gray-200">winup</span> <span class="text-gray-500">— winget upgrade picker</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2">Navigation</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">j</span> <span class="text-gray-500">— bookmarked-folder jumper</span></li>
+                            <li><span class="mono text-gray-200">jb</span> / <span class="mono text-gray-200">jf</span> <span class="text-gray-500">— jump back / forward</span></li>
+                            <li><span class="mono text-gray-200">prj</span> <span class="text-gray-500">— jump to any git repo</span></li>
+                            <li><span class="mono text-gray-200">mkcd</span> <span class="text-gray-500">— make dir &amp; cd into it</span></li>
+                            <li><span class="mono text-gray-200">up</span> <span class="text-gray-500">— go up N parent dirs</span></li>
+                            <li><span class="mono text-gray-200">..</span> / <span class="mono text-gray-200">...</span> <span class="text-gray-500">— up one / two dirs</span></li>
+                            <li><span class="mono text-gray-200">docs</span> · <span class="mono text-gray-200">desktop</span> · <span class="mono text-gray-200">downloads</span> <span class="text-gray-500">— OneDrive shortcuts</span></li>
+                            <li><span class="mono text-gray-200">onedrive</span> · <span class="mono text-gray-200">home</span> <span class="text-gray-500">— root / user profile</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-teal-400 mb-2">Discovery</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">toolkit</span> <span class="text-gray-500">— all commands by area</span></li>
+                            <li><span class="mono text-gray-200">Get-ToolkitCommand</span> <span class="text-gray-500">— this list, as objects</span></li>
+                            <li><span class="mono text-gray-200">tip</span> <span class="text-gray-500">— a random profile tip</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-fuchsia-400 mb-2">Oh My Posh &amp; Terminal</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">Set-PoshTheme</span> <span class="text-gray-500">— pick / set a theme</span></li>
+                            <li><span class="mono text-gray-200">Get-PoshTheme</span> <span class="text-gray-500">— current theme</span></li>
+                            <li><span class="mono text-gray-200">Update-PoshThemes</span> <span class="text-gray-500">— download the gallery</span></li>
+                            <li><span class="mono text-gray-200">Get-TerminalFont</span> <span class="text-gray-500">— show the WT font</span></li>
+                            <li><span class="mono text-gray-200">Set-TerminalFont</span> <span class="text-gray-500">— change the WT font</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-2">Files &amp; archives</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">peek</span> <span class="text-gray-500">— extract archive &amp; explore</span></li>
+                            <li><span class="mono text-gray-200">json</span> <span class="text-gray-500">— pretty-print &amp; highlight JSON</span></li>
+                            <li><span class="mono text-gray-200">dird</span> <span class="text-gray-500">— listing with AI descriptions</span></li>
+                            <li><span class="mono text-gray-200">fr</span> <span class="text-gray-500">— newest-first BBS-style list</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-orange-400 mb-2">Notes &amp; remote</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">note</span> <span class="text-gray-500">— timestamped bullet / open today</span></li>
+                            <li><span class="mono text-gray-200">Find-Note</span> <span class="text-gray-500">— search all daily notes</span></li>
+                            <li><span class="mono text-gray-200">Set-NotesRoot</span> <span class="text-gray-500">— choose the notes folder</span></li>
+                            <li><span class="mono text-gray-200">rdp</span> <span class="text-gray-500">— Remote Desktop to a server</span></li>
+                            <li><span class="mono text-gray-200">rps</span> <span class="text-gray-500">— PowerShell remoting session</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-rose-400 mb-2">AI helpers</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">ask</span> <span class="text-gray-500">— quick question to ch.at</span></li>
+                            <li><span class="mono text-gray-200">wtf</span> <span class="text-gray-500">— ask Claude what went wrong</span></li>
+                            <li><span class="mono text-gray-200">tagdl</span> <span class="text-gray-500">— AI-tag Downloads files</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-yellow-400 mb-2">Secrets</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">Get-OrCreateSecret</span> <span class="text-gray-500">— get or prompt for a secret</span></li>
+                            <li><span class="mono text-gray-200">Get-StoredSecrets</span> <span class="text-gray-500">— list secret names</span></li>
+                            <li><span class="mono text-gray-200">Remove-StoredSecret</span> <span class="text-gray-500">— delete a secret</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-green-400 mb-2">System</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">df</span> <span class="text-gray-500">— disk-free with usage bars</span></li>
+                            <li><span class="mono text-gray-200">Get-SysInfo</span> <span class="text-gray-500">— host/OS/CPU/mem/GPU panel</span></li>
+                            <li><span class="mono text-gray-200">Get-Uptime</span> <span class="text-gray-500">— time since last boot</span></li>
+                            <li><span class="mono text-gray-200">Get-PubIP</span> <span class="text-gray-500">— public IPv4 / IPv6</span></li>
+                            <li><span class="mono text-gray-200">Find-File</span> <span class="text-gray-500">— recursive name search</span></li>
+                            <li><span class="mono text-gray-200">Format-ByteSize</span> <span class="text-gray-500">— human-readable size</span></li>
+                            <li><span class="mono text-gray-200">sudo</span> <span class="text-gray-500">— run a command elevated</span></li>
+                            <li><span class="mono text-gray-200">Start-AdminTerminal</span> <span class="text-gray-500">— new elevated terminal</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400 mb-2">Microsoft 365</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">Connect-Graph</span> · <span class="mono text-gray-200">Disconnect-Graph</span> <span class="text-gray-500">— Graph session</span></li>
+                            <li><span class="mono text-gray-200">Connect-Exchange</span> · <span class="mono text-gray-200">Disconnect-Exchange</span> <span class="text-gray-500">— EXO session</span></li>
+                            <li><span class="mono text-gray-200">Get-TeamsInfo</span> <span class="text-gray-500">— list Teams via Graph</span></li>
+                            <li><span class="mono text-gray-200">Get-TenantOverview</span> <span class="text-gray-500">— tenant stats in one shot</span></li>
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Footer CTA -->
+            <div class="text-center">
+                <div class="inline-flex flex-col md:flex-row items-center gap-4 p-6 rounded-2xl glass">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+                            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                            </svg>
+                        </div>
+                        <div class="text-left">
+                            <div class="text-sm text-gray-400">Source</div>
+                            <a href="https://github.com/haakonwibe/pwsh-toolkit" class="font-semibold hover:text-blue-400 transition-colors">github.com/haakonwibe/pwsh-toolkit</a>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block w-px h-12 bg-white/20"></div>
+
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/>
+                            </svg>
+                        </div>
+                        <div class="text-left">
+                            <div class="text-sm text-gray-400">Install in one line</div>
+                            <code class="font-semibold text-blue-300 mono text-sm">.\install.ps1</code>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 text-gray-500 text-sm">
+                    Created by <span class="text-gray-300">Haakon Wibe</span> • MIT licensed • <span class="mono">v0.1.63</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>

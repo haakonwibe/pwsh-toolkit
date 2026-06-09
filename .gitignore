@@ -1,0 +1,26 @@
+# User-specific profile config (copied from config.example.psd1 by install.ps1).
+# Keep your machine-specific overrides local.
+Profiles/config.psd1
+
+# Per-machine and per-host customization scripts. These contain real paths,
+# network drive mappings, possibly company OneDrive orgs, etc. — personal
+# enough to stay out of a public repo. Only the *.ps1 files are ignored: the
+# README.md docs and the *.ps1.example templates in these folders stay tracked.
+Profiles/Machines/*.ps1
+Profiles/Hosts/*.ps1
+
+# Backups created by install.ps1 when it replaces an existing $PROFILE, plus
+# the *.bak that Set-TerminalFont writes next to a settings.json it edits.
+*.backup-*
+*.bak
+
+# tagdl's per-folder index of AI file descriptions. Lives in whatever folder
+# you tag (normally ~\Downloads, outside the repo) — ignored here as defense
+# in depth so it can never be committed by accident if tagdl is ever pointed
+# at the repo tree.
+_downloads-index.csv
+
+# Pester / PSScriptAnalyzer artifacts (used by CI in .github/workflows/).
+TestResults.xml
+*.coverage
+*.coveragexml
