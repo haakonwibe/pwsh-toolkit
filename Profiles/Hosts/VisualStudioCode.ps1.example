@@ -1,0 +1,41 @@
+# ============================================================================
+# VS Code integrated terminal — host overrides (EXAMPLE / TEMPLATE)
+# ----------------------------------------------------------------------------
+# This sample is NOT loaded (it ends in ".example"). To activate it, copy it to
+# the host's real name — for the VS Code integrated terminal that is exactly
+# "VisualStudioCode.ps1" (from `(Get-Host).Name -replace ' ', ''`):
+#
+#     Copy-Item VisualStudioCode.ps1.example VisualStudioCode.ps1
+#
+# Then reopen the terminal (or . $PROFILE). Real "<HostName>.ps1" files here are
+# .gitignored; this template is tracked as documentation. Loaded AFTER
+# config.psd1, Common/, and the per-machine override.
+# ============================================================================
+
+# ─── Use the Custom prompt here instead of Oh My Posh ───────────────────────
+# Oh My Posh can look out of place in the embedded terminal (and needs a Nerd
+# Font set in VS Code's own `terminal.integrated.fontFamily`, separate from
+# Windows Terminal's). To keep OMP everywhere else but use the toolkit's
+# lightweight Custom prompt in VS Code, uncomment these two lines:
+#
+#   - Flipping $script:Config.Prompt makes the loader's Oh My Posh "tail"
+#     (transient prompt + Graph status hook) skip itself, so nothing is left
+#     half-wired — the only cost is OMP's init already ran once this session.
+#   - Common/Prompt.ps1 was skipped at load time (OMP owned the prompt), so we
+#     dot-source it now to define the Custom prompt function.
+#
+# $script:Config.Prompt = 'Custom'
+# . (Join-Path $script:ProfileRoot 'Common\Prompt.ps1')
+
+# ─── PSReadLine: inline prediction suits the narrower VS Code panel ─────────
+# Set-PSReadLineOption -PredictionViewStyle InlineView
+# Set-PSReadLineOption -HistorySearchCursorMovesToEnd
+
+# ─── Key bindings VS Code doesn't already claim ─────────────────────────────
+# VS Code owns Ctrl+K (its own chord), so bind kill-line to Alt+k here instead.
+# Set-PSReadLineKeyHandler -Key Alt+k -Function KillLine
+
+# ─── Open the current folder / a file back in the editor ────────────────────
+# function edit { code @args }      # `edit .`  or  `edit notes.md`
+
+# Write-Verbose 'VS Code host config loaded'

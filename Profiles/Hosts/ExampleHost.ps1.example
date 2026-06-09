@@ -1,0 +1,49 @@
+# ============================================================================
+# Host-specific overrides — EXAMPLE / TEMPLATE
+# ----------------------------------------------------------------------------
+# This sample is NOT loaded. The loader only dot-sources a file named exactly
+# "<HostName>.ps1"; this one uses an imaginary host name and ends in
+# ".example", so it can never match. The host name is:
+#
+#   (Get-Host).Name -replace ' ', ''      # "Visual Studio Code" -> "VisualStudioCode"
+#
+# Common values: ConsoleHost (pwsh.exe and Windows Terminal both report this),
+# VisualStudioCode (VS Code's integrated terminal), Windows PowerShell ISE.
+#
+# To use it:
+#   1. Get your host name:   (Get-Host).Name -replace ' ', ''
+#   2. Copy this template to that name with a .ps1 extension, e.g.
+#        Copy-Item ExampleHost.ps1.example 'ConsoleHost.ps1'
+#   3. Uncomment what you need, then reopen the host (or . $PROFILE).
+#
+# Real "<HostName>.ps1" files in this folder are .gitignored; this .example
+# template is tracked, as documentation. Loaded AFTER config.psd1, Common/, and
+# the per-machine override — host config is for things that vary by TERMINAL:
+# PSReadLine style, key bindings, prompt tweaks, color support. README.md in
+# this folder has the full reference. Every line below is commented.
+# ============================================================================
+
+# ─── Prediction view (PSReadLine) ───────────────────────────────────────────
+# InlineView is tidy in a narrow pane (VS Code); ListView shows a dropdown.
+# Set-PSReadLineOption -PredictionViewStyle InlineView
+
+# ─── Host-specific key bindings ─────────────────────────────────────────────
+# VS Code claims Ctrl+K for its own commands, so bind kill-line elsewhere here:
+# Set-PSReadLineKeyHandler -Key Alt+k -Function KillLine
+
+# ─── Branch on the actual terminal ──────────────────────────────────────────
+# (Get-Host).Name is "ConsoleHost" for both pwsh.exe and Windows Terminal;
+# $env:WT_SESSION tells them apart.
+# if ($env:WT_SESSION) {
+#     Set-PSReadLineOption -PredictionViewStyle ListView    # roomy: Windows Terminal
+# } else {
+#     Set-PSReadLineOption -PredictionViewStyle InlineView  # plain console
+# }
+
+# ─── Terminal-specific colors (PSStyle, PowerShell 7.2+) ────────────────────
+# $PSStyle.FileInfo.Directory = "`e[34;1m"   # bright blue directories
+
+# ─── A host-scoped helper ───────────────────────────────────────────────────
+# function edit { code $args }
+
+# Write-Verbose 'ExampleHost host config loaded'

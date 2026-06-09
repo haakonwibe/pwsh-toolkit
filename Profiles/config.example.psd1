@@ -1,0 +1,142 @@
+# ============================================================================
+# pwsh-toolkit profile configuration
+# ----------------------------------------------------------------------------
+# Copy this file to `config.psd1` (same folder) and edit. The loader reads
+# `config.psd1` if present; otherwise it falls back to these defaults.
+#
+# `config.psd1` is gitignored — your edits stay local.
+# ============================================================================
+
+@{
+    # ─── Prompt ──────────────────────────────────────────────────────────────
+    # 'OhMyPosh'  – Use Oh My Posh + the theme below. Requires oh-my-posh on
+    #               PATH and a Nerd Font in your terminal.
+    # 'Custom'    – Use the in-repo custom prompt (Common/Prompt.ps1).
+    # 'Default'   – Leave PowerShell's default prompt alone.
+    Prompt = 'Custom'
+
+    # OhMyPosh theme. Options:
+    #   'name' or 'name.omp.json'  – bare name, looked up in Profiles/OhMyPosh/
+    #                                first, then the downloaded gallery cache
+    #                                (run Update-PoshThemes to populate it).
+    #   'Random'                   – a different theme each shell, drawn from the
+    #                                gallery + bundled themes. The loader prints
+    #                                which one it picked so you can pin it with
+    #                                Set-PoshTheme. Browse/switch with Set-PoshTheme.
+    #   absolute path / path with a slash – used as-is.
+    OhMyPoshTheme = 'default.omp.json'
+
+    # ─── Toolkit location ────────────────────────────────────────────────────
+    # Folder containing WingetUpgrade/, DownloadsOrganizer/, etc. Used by the
+    # `winup`, `tagdl`, `dird`, `fr` wrappers to find their target scripts.
+    #
+    # $null  = auto-detect (parent of Profiles/) — works for the default layout
+    #          where Profiles/ is a subfolder of the cloned repo.
+    # string = explicit path. Use this if you've split Profiles/ off into a
+    #          separate dotfiles repo and need to point at the toolkit elsewhere.
+    ToolkitRoot = $null
+
+    # ─── OneDrive ────────────────────────────────────────────────────────────
+    # Organization suffix for "OneDrive - <Org>" paths used by the `docs`,
+    # `desktop`, `onedrive` helpers and the default OneDrive jump entry.
+    #
+    # $null    = auto-detect from $env:OneDriveCommercial (set by the OneDrive
+    #            client when signed into a Business account). Falls back to
+    #            personal OneDrive if no Business account is signed in.
+    # ''       = force personal OneDrive (no " - Org" suffix).
+    # 'Name'   = explicit override.
+    OneDriveOrg = $null
+
+    # ─── Folder jumper (j) ───────────────────────────────────────────────────
+    # Extra destinations appended to the built-in starter list (Home, Downloads,
+    # OneDrive, LocalAppData, ProgramData).
+    #
+    # IMPORTANT — only literal strings here. This file is parsed by
+    # Import-PowerShellDataFile in restricted-language mode, which DISALLOWS
+    # variable references and expressions:
+    #
+    #     Path = 'C:\GitHub'        ← OK (literal string)
+    #     Path = $env:TEMP          ← ERROR (variable reference)
+    #     Path = "$HOME\dev"        ← ERROR (interpolation)
+    #     Path = (Join-Path ...)    ← ERROR (cmdlet call)
+    #
+    # For anything that needs PowerShell evaluation (env vars, conditional
+    # paths, Test-Path checks, etc.), put it in Machines/<COMPUTERNAME>.ps1 —
+    # that file is regular PowerShell, dot-sourced after this config is
+    # applied, so it can extend $script:JumpFolders with arbitrary expressions:
+    #
+    #     $script:JumpFolders += [pscustomobject]@{ Label = 'Temp'; Path = $env:TEMP }
+    ExtraJumpFolders = @(
+        # @{ Label = 'GitHub'; Path = 'C:\GitHub' }
+        # @{ Label = 'VMs';    Path = 'D:\VMs' }
+    )
+
+    # ─── Remote servers (rdp, rps) ───────────────────────────────────────────
+    # Destinations for the `rdp` (Remote Desktop / mstsc) and `rps` (PowerShell
+    # Remoting / Enter-PSSession) helpers. Same literals-only constraint as
+    # ExtraJumpFolders.
+    #
+    # Each entry takes:
+    #   Label   — short display name shown in the picker
+    #   Address — DNS name or IP that mstsc / Enter-PSSession will connect to
+    #   User    — optional. rps pre-fills Get-Credential with this name; rdp
+    #             ignores it (use Windows Credential Manager / cmdkey if you
+    #             want RDP creds saved).
+    #
+    # No credential helpers in v1 — let Windows / Get-Credential prompt as
+    # needed. SSH transport for PSRemoting is also out of scope; rps uses the
+    # default WinRM transport.
+    RemoteServers = @(
+        # @{ Label = 'Lab DC';      Address = 'dc01.lab.local';   User = 'lab\admin' }
+        # @{ Label = 'Build';       Address = 'build.contoso.com' }
+        # @{ Label = 'Jumphost';    Address = '10.0.5.20' }
+    )
+
+    # ─── Git projects (prj) ──────────────────────────────────────────────────
+    # Roots scanned by `prj` for git repositories. Same literals-only constraint
+    # as ExtraJumpFolders (no $env: expansion — use Machines/<COMPUTERNAME>.ps1
+    # to set $script:Config.ProjectRoots with expressions if needed).
+    #
+    # Empty = fall back to C:\GitHub if it exists. Repos are found up to four
+    # directories deep under each root (root\[host\]org\repo), and the list is
+    # cached per session — run `prj -Refresh` after cloning new repos.
+    ProjectRoots = @(
+        # 'C:\GitHub'
+        # 'D:\src'
+    )
+
+    # ─── Notes / journal (note, today) ───────────────────────────────────────
+    # Folder for the daily markdown journal. `note "text"` appends a
+    # timestamped bullet to YYYY-MM-DD.md inside this folder; `today` (no-args)
+    # opens the file in your default .md app.
+    #
+    # When $null, NotesRoot is auto-detected via cascade:
+    #   1. Obsidian vault flagged "open" in obsidian.json — uses <vault>\Daily
+    #   2. Most-recently-touched Obsidian vault — uses <vault>\Daily
+    #   3. OneDrive (Commercial preferred, then Consumer) — Documents\Notes
+    #   4. <$env:USERPROFILE>\Documents\Notes (local-only fallback)
+    #
+    # Philosophy: respect Obsidian-as-source-of-truth. If you have Obsidian
+    # configured with a vault open, that's where you work — whether the
+    # vault lives locally or in OneDrive is YOUR choice in Obsidian, not
+    # something the cascade overrides. Sync via OneDrive is the fallback
+    # for users who don't have Obsidian configured at all.
+    #
+    # Run `Set-NotesRoot` to pick interactively from the available candidates.
+    # That command also prints the snippet to paste here for persistence.
+    #
+    # string  = explicit literal path (no $env: expansion — see ExtraJumpFolders
+    #           above for why)
+    NotesRoot = $null
+
+    # ─── Startup tips ────────────────────────────────────────────────────────
+    # The rotating tip shown at shell startup. The env var $env:PSPROFILE_NO_TIPS
+    # also disables tips and overrides this setting (handy for CI / scripts).
+    DisableStartupTips = $false
+
+    # ─── Feature toggles ─────────────────────────────────────────────────────
+    Features = @{
+        # Skip the M365/ helpers even if Microsoft.Graph is installed.
+        DisableM365 = $false
+    }
+}

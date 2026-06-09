@@ -1,0 +1,53 @@
+# ============================================================================
+# Machine-specific overrides — EXAMPLE / TEMPLATE
+# ----------------------------------------------------------------------------
+# This sample is NOT loaded. The loader only dot-sources a file named exactly
+# "<COMPUTERNAME>.ps1"; this one uses an imaginary machine name and ends in
+# ".example", so it can never match. To use it:
+#
+#   1. Find your computer name:   $env:COMPUTERNAME
+#   2. Copy this template to that name with a .ps1 extension, e.g.
+#        Copy-Item EXAMPLE-DESKTOP.ps1.example "$env:COMPUTERNAME.ps1"
+#   3. Uncomment what you need, then reload:   . $PROFILE
+#
+# Real "<COMPUTERNAME>.ps1" files in this folder are .gitignored (they hold
+# personal paths, drive maps, org names), so your edits stay local. This
+# .example template is tracked on purpose, as documentation.
+#
+# Loaded AFTER config.psd1 is applied and AFTER Common/ — so it can read and
+# extend $script:Config and $script:JumpFolders, use real PowerShell (env vars,
+# Test-Path, loops), and override any toolkit function. README.md in this folder
+# has the full reference. Every line below is commented; uncomment to use.
+# ============================================================================
+
+# ─── OneDrive org override ──────────────────────────────────────────────────
+# Force a specific "OneDrive - <Org>" suffix on this machine (the docs/desktop/
+# onedrive helpers use it). Normally auto-detected — set it only when the guess
+# is wrong, or to pin a particular tenant on a shared/consulting laptop.
+# $script:Config.OneDriveOrg = 'Contoso Ltd'
+
+# ─── Jump folders that need evaluation ──────────────────────────────────────
+# Plain literal paths belong in config.psd1's ExtraJumpFolders. Put anything
+# that needs PowerShell to evaluate here — env vars, conditional or generated
+# paths — because this file runs after the config is applied.
+# $script:JumpFolders += [pscustomobject]@{ Label = 'Temp'; Path = $env:TEMP }
+#
+# Only add a mapped drive if it's actually present on this machine:
+# if (Test-Path 'Z:\') {
+#     $script:JumpFolders += [pscustomobject]@{ Label = 'Share'; Path = 'Z:\Projects' }
+# }
+
+# ─── Conditional network drive map ──────────────────────────────────────────
+# if (-not (Test-Path 'Z:\')) {
+#     New-PSDrive -Name Z -PSProvider FileSystem -Root '\\fileserver\share' -Persist -ErrorAction SilentlyContinue | Out-Null
+# }
+
+# ─── Machine-specific shortcuts ─────────────────────────────────────────────
+# function vms  { Set-Location 'D:\VMs' }
+# Set-Alias work vms
+
+# ─── Secrets: never hard-code ───────────────────────────────────────────────
+# Pull from SecretStore instead of pasting a token into this file:
+# $env:SOME_API_KEY = Get-OrCreateSecret -Name 'Some-API-Key' -AsPlainText
+
+# Write-Host '✅ EXAMPLE-DESKTOP machine config loaded' -ForegroundColor Green
