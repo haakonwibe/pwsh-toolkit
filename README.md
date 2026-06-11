@@ -152,7 +152,7 @@ The installer seeds `Profiles/config.psd1` from `Profiles/config.example.psd1`. 
 }
 ```
 
-For more complex per-machine logic (registering network drives, machine-specific functions, conditional setup), drop a `Profiles/Machines/<COMPUTERNAME>.ps1` — it's dot-sourced after the Common helpers load. Same pattern for `Profiles/Hosts/<HostName>.ps1` for per-host tweaks — e.g. a `Hosts/VisualStudioCodeHost.ps1` that swaps Oh My Posh for the lightweight Custom prompt in the VS Code PowerShell extension terminal (plain terminals, including Windows Terminal, report `ConsoleHost`). Copy-ready `*.ps1.example` templates live in both folders; see their READMEs.
+For more complex per-machine logic (registering network drives, machine-specific functions, conditional setup), drop a `Profiles/Machines/<COMPUTERNAME>.ps1` — it's dot-sourced after the Common helpers load. Same pattern for `Profiles/Hosts/<HostName>.ps1` for per-host tweaks, e.g. a `Hosts/VisualStudioCodeHost.ps1` that swaps Oh My Posh for the lightweight Custom prompt in the VS Code PowerShell extension terminal. Plain terminals, including Windows Terminal, report `ConsoleHost`. Copy-ready `*.ps1.example` templates live in both folders; see their READMEs.
 
 `config.psd1` is gitignored — your edits stay local.
 
