@@ -159,6 +159,20 @@ function Show-Json {
             if ($items.Count -eq 1 -and $items[0] -is [string]) {
                 $text = [string]$items[0]
             }
+            elseif (-not ($items | Where-Object { $_ -isnot [string] })) {
+                # Several piped strings are usually the LINES of one document
+                # (Get-Content without -Raw). If the joined text parses as JSON,
+                # show that document; otherwise serialize the strings as a JSON
+                # array like any other object input.
+                $joined = $items -join "`n"
+                try {
+                    $null = ConvertFrom-Json -InputObject $joined -ErrorAction Stop
+                    $text = $joined
+                } catch {
+                    $text = ConvertTo-Json -InputObject $items.ToArray() -Depth $Depth
+                    $canReformat = $false
+                }
+            }
             else {
                 $obj = if ($items.Count -eq 1) { $items[0] } else { $items.ToArray() }
                 $text = ConvertTo-Json -InputObject $obj -Depth $Depth

@@ -66,7 +66,10 @@ function Get-RemoteServerByMatch {
     param([string] $Match)
     if (-not $Match) { return $null }
     $servers = @($script:Config.RemoteServers)
-    $servers | Where-Object { $_.Label -like "*$Match*" -or $_.Address -like "*$Match*" } | Select-Object -First 1
+    # Escaped so wildcard metacharacters in the input match literally
+    # instead of throwing (e.g. an unbalanced '[').
+    $safe = [WildcardPattern]::Escape($Match)
+    $servers | Where-Object { $_.Label -like "*$safe*" -or $_.Address -like "*$safe*" } | Select-Object -First 1
 }
 
 function Resolve-RemoteServer {

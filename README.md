@@ -86,7 +86,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 | **`Update-PoshThemes` / `Set-PoshTheme` / `Get-PoshTheme`** | Oh My Posh theme tools. `Update-PoshThemes` downloads the full ~120-theme gallery into a local cache; `Set-PoshTheme` is a `Show-Picker` over all themes (+ a Random entry) that previews live and prints the config snippet; `Get-PoshTheme` reports the active theme. Set `OhMyPoshTheme = 'Random'` for a different theme each shell (the loader names the one it rolled so you can pin it). |
 | **`ll` / `la` / `lh` / `touch` / `which`** | The shell-script staples. `ll` lists; `la` adds hidden/system entries; `lh` shows *only* hidden/system entries; `touch` creates files or bumps timestamps without ever truncating (accepts paths + multiple targets); `which` resolves a command to its backing path, alias target, or kind. |
 
-**M365 helpers** (loaded only if `Microsoft.Graph` is installed): `Connect-Graph`, `Connect-Exchange`, `Get-TenantOverview`, `Get-TeamsInfo`, `Disconnect-Graph`, `Disconnect-Exchange`.
+**M365 helpers** (loaded only if `Microsoft.Graph` is installed): `Connect-Tenant`, `Connect-Exchange`, `Get-TenantOverview`, `Get-TeamsInfo`, `Disconnect-Tenant`, `Disconnect-Exchange`.
 
 > Every command carries `Get-Help` documentation — try `Get-Help touch -Examples` or `Get-Help j` for usage and examples right in the terminal. The rotating startup `tip` is the at-a-glance counterpart.
 
@@ -152,7 +152,7 @@ The installer seeds `Profiles/config.psd1` from `Profiles/config.example.psd1`. 
 }
 ```
 
-For more complex per-machine logic (registering network drives, machine-specific functions, conditional setup), drop a `Profiles/Machines/<COMPUTERNAME>.ps1` — it's dot-sourced after the Common helpers load. Same pattern for `Profiles/Hosts/<HostName>.ps1` for per-host (VS Code, Windows Terminal, ISE) tweaks — e.g. a `Hosts/VisualStudioCode.ps1` that swaps Oh My Posh for the lightweight Custom prompt in the VS Code terminal. Copy-ready `*.ps1.example` templates live in both folders; see their READMEs.
+For more complex per-machine logic (registering network drives, machine-specific functions, conditional setup), drop a `Profiles/Machines/<COMPUTERNAME>.ps1` — it's dot-sourced after the Common helpers load. Same pattern for `Profiles/Hosts/<HostName>.ps1` for per-host tweaks — e.g. a `Hosts/VisualStudioCodeHost.ps1` that swaps Oh My Posh for the lightweight Custom prompt in the VS Code PowerShell extension terminal (plain terminals, including Windows Terminal, report `ConsoleHost`). Copy-ready `*.ps1.example` templates live in both folders; see their READMEs.
 
 `config.psd1` is gitignored — your edits stay local.
 
@@ -175,7 +175,7 @@ The profile loads fine without any of these — the relevant feature just stays 
 | `Prompt = 'OhMyPosh'` (the polished prompt) | `.\install.ps1 -InstallOhMyPosh` does the whole setup. (Manual: `winget install JanDeDobbeleer.OhMyPosh` + `oh-my-posh font install Meslo --user` + `Install-Module Terminal-Icons`.) |
 | `tagdl` (AI Downloads tagger) and `wtf` (Claude-powered error explainer) | `Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore`, then store an `Anthropic-API-Key` secret with `Get-OrCreateSecret -Name 'Anthropic-API-Key'`. Both reuse the same key. |
 | `peek` for `.rar` / `.7z` / `.tar.gz` / ISO / etc. (not just `.zip`) | `winget install 7zip.7zip` (and/or WinRAR for `.rar`) |
-| M365 helpers (`Connect-Graph`, `Get-TenantOverview`) | `Install-Module Microsoft.Graph, ExchangeOnlineManagement` |
+| M365 helpers (`Connect-Tenant`, `Get-TenantOverview`) | `Install-Module Microsoft.Graph, ExchangeOnlineManagement` |
 
 ---
 

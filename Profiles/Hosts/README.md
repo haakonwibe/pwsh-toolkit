@@ -16,16 +16,17 @@ Host-specific configurations are useful for:
 A PowerShell "host" is the application running PowerShell. Different hosts may have different capabilities and display characteristics.
 
 Common hosts:
-- **ConsoleHost** - Traditional PowerShell console (powershell.exe, pwsh.exe)
-- **Visual Studio Code** - VS Code integrated terminal
-- **Windows Terminal** - Modern Windows Terminal
-- **Windows PowerShell ISE** - PowerShell ISE (legacy)
+- **ConsoleHost** - What plain pwsh reports — in a traditional console window, in Windows Terminal, *and* in a plain VS Code integrated terminal. Use `$env:WT_SESSION` / `$env:TERM_PROGRAM -eq 'vscode'` inside `ConsoleHost.ps1` to tell them apart (see [Detecting Multiple Hosts](#detecting-multiple-hosts)).
+- **Visual Studio Code Host** - The VS Code *PowerShell extension's* integrated console (file: `VisualStudioCodeHost.ps1`)
+- **Windows PowerShell ISE Host** - PowerShell ISE (legacy; file: `WindowsPowerShellISEHost.ps1`)
+
+> Windows Terminal is not its own host — it reports `ConsoleHost` like any other terminal running pwsh.
 
 ## Getting Your Host Name
 
 ```powershell
 (Get-Host).Name
-# Example output: "ConsoleHost" or "Visual Studio Code"
+# Example output: "ConsoleHost" or "Visual Studio Code Host"
 ```
 
 ## Creating a Host-Specific Configuration
@@ -41,7 +42,7 @@ Then edit the new `.ps1` and reopen the host (or `. $PROFILE`). The template shi
 1. Get your host name (spaces will be removed):
    ```powershell
    $hostName = (Get-Host).Name -replace " ", ""
-   # "Visual Studio Code" becomes "VisualStudioCode"
+   # "Visual Studio Code Host" becomes "VisualStudioCodeHost"
    ```
 
 2. Create a file named `{HostName}.ps1` in this directory
@@ -52,15 +53,17 @@ Then edit the new `.ps1` and reopen the host (or `. $PROFILE`). The template shi
 
 ### VS Code Specific Settings
 
-> **Want Oh My Posh off in VS Code (but kept everywhere else)?** Set `$script:Config.Prompt = 'Custom'` here and dot-source the Custom prompt — that one flip also makes the loader's Oh My Posh tail (transient prompt + Graph hook) skip itself, so nothing is left half-initialized. A ready-to-copy `VisualStudioCode.ps1.example` ships in this folder:
+> **Want Oh My Posh off in VS Code (but kept everywhere else)?** Set `$script:Config.Prompt = 'Custom'` here and dot-source the Custom prompt — that one flip also makes the loader's Oh My Posh tail (transient prompt + Graph hook) skip itself, so nothing is left half-initialized. A ready-to-copy `VisualStudioCodeHost.ps1.example` ships in this folder:
 >
 > ```powershell
 > $script:Config.Prompt = 'Custom'
 > . (Join-Path $script:ProfileRoot 'Common\Prompt.ps1')
 > ```
 
+This file fires for the PowerShell *extension's* integrated console (host name "Visual Studio Code Host"). A plain VS Code terminal without the extension reports `ConsoleHost` — branch on `$env:TERM_PROGRAM -eq 'vscode'` in `ConsoleHost.ps1` for that case.
+
 ```powershell
-# File: VisualStudioCode.ps1
+# File: VisualStudioCodeHost.ps1
 
 # VS Code-specific PSReadLine settings
 Set-PSReadLineOption -PredictionViewStyle InlineView  # Better for narrow terminal
@@ -81,8 +84,11 @@ Write-Verbose "VS Code host configuration loaded"
 
 ### Windows Terminal Settings
 
+Windows Terminal reports the host name `ConsoleHost`, so these settings go in `ConsoleHost.ps1` gated on `$env:WT_SESSION`:
+
 ```powershell
-# File: WindowsTerminal.ps1
+# File: ConsoleHost.ps1 (Windows Terminal branch)
+if (-not $env:WT_SESSION) { return }
 
 # Windows Terminal has better Unicode support
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -136,7 +142,7 @@ function open($path) {
 ### PowerShell ISE Settings (Legacy)
 
 ```powershell
-# File: WindowsPowerShellISE.ps1
+# File: WindowsPowerShellISEHost.ps1
 
 # ISE doesn't support PSReadLine
 # Skip PSReadLine configuration
@@ -252,7 +258,7 @@ function prompt {
 ### Terminal-Specific Colors
 
 ```powershell
-# File: WindowsTerminal.ps1
+# File: ConsoleHost.ps1 (Windows Terminal reports ConsoleHost — gate on $env:WT_SESSION)
 
 # Windows Terminal supports more colors
 $PSStyle.FileInfo.Directory = "`e[34;1m"  # Bright blue for directories
@@ -273,8 +279,8 @@ $PSStyle.Formatting.Error = "`e[91m"  # Bright red
 ## Example: Full Host Configuration
 
 ```powershell
-# File: VisualStudioCode.ps1
-# VS Code integrated terminal optimizations
+# File: VisualStudioCodeHost.ps1
+# VS Code PowerShell extension terminal optimizations
 
 # === PSReadLine Configuration ===
 # Inline view works better in VS Code's narrower terminal

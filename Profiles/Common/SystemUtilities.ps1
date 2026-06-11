@@ -483,7 +483,14 @@ function sudo {
     }
 
     # No enabled native sudo / gsudo: run the command in a new elevated window.
+    # Re-quote each argument — PowerShell stripped the caller's quotes during
+    # binding, so a bare -join ' ' would let the elevated pwsh re-split a path
+    # like 'C:\Program Files\x.txt' into two arguments. The leading & makes the
+    # (possibly quoted) first element invoke as a command.
     Write-Verbose 'sudo: no enabled native sudo or gsudo — using a new elevated window'
-    $cmdline = $Command -join ' '
+    $quoted = foreach ($arg in $Command) {
+        if ($arg -match '[\s''"]') { "'{0}'" -f ($arg -replace "'", "''") } else { $arg }
+    }
+    $cmdline = '& ' + ($quoted -join ' ')
     Start-Process pwsh -Verb RunAs -ArgumentList '-NoExit', '-Command', $cmdline
 }

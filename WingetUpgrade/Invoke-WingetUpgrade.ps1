@@ -337,11 +337,18 @@ foreach ($p in $chosen) {
         (Format-Cell $p.Available 14))
 }
 Write-Host ''
-Write-Host '  Proceed? [Y/n] ' -ForegroundColor Yellow -NoNewline
-$confirm = Read-Host
-if ($confirm -and $confirm -notmatch '^(y|yes)$') {
-    Write-Log 'User cancelled at confirmation.' -Level INFO
-    exit 0
+# -All promises a non-interactive run (scheduled tasks, the -Elevated relaunch),
+# so it must not block on Read-Host — under -NonInteractive that throws, and in
+# an unattended elevated window it would hang forever.
+if ($All) {
+    Write-Log 'Skipping confirmation (-All).' -Level INFO
+} else {
+    Write-Host '  Proceed? [Y/n] ' -ForegroundColor Yellow -NoNewline
+    $confirm = Read-Host
+    if ($confirm -and $confirm -notmatch '^(y|yes)$') {
+        Write-Log 'User cancelled at confirmation.' -Level INFO
+        exit 0
+    }
 }
 
 # ---------- Upgrade ----------

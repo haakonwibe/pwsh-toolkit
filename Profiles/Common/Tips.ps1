@@ -26,9 +26,9 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'Get-StoredSecrets  —  list every secret you have stashed in SecretStore';                   E = 'Try: Get-StoredSecrets' }
     [pscustomobject]@{ H = 'rdp  —  Remote Desktop picker driven by config.psd1''s RemoteServers list';                 E = 'Try: rdp   (also: rdp dc, rdp build — fuzzy match)' }
     [pscustomobject]@{ H = 'rps  —  PowerShell Remoting picker (Enter-PSSession) — same data as rdp';                   E = 'Try: rps   (User on the server entry pre-fills Get-Credential)' }
-    [pscustomobject]@{ H = 'Connect-Graph  —  Microsoft Graph login with the right scopes preset';                      E = 'Try: Connect-Graph   (then: Get-TenantOverview)' }
+    [pscustomobject]@{ H = 'Connect-Tenant  —  Microsoft Graph login with the right scopes preset';                      E = 'Try: Connect-Tenant   (then: Get-TenantOverview)' }
     [pscustomobject]@{ H = 'Connect-Exchange  —  Exchange Online login';                                                E = 'Try: Connect-Exchange' }
-    [pscustomobject]@{ H = 'Get-TenantOverview  —  comprehensive tenant statistics in one shot';                        E = 'Try: Get-TenantOverview   (after Connect-Graph)' }
+    [pscustomobject]@{ H = 'Get-TenantOverview  —  comprehensive tenant statistics in one shot';                        E = 'Try: Get-TenantOverview   (after Connect-Tenant)' }
     [pscustomobject]@{ H = 'ask <question>  —  quick reference via the ch.at API';                                      E = 'Try: ask "regex to match an IPv4 address"' }
     [pscustomobject]@{ H = 'docs / desktop / downloads / onedrive / home  —  named navigation shortcuts';              E = 'Try: downloads   (or use j for an interactive picker)' }
     [pscustomobject]@{ H = 'mkcd / up / .. / ...  —  make-and-enter a dir; go up N levels';                            E = 'Try: mkcd src\new-feature   (also: up 2, .., ...)' }

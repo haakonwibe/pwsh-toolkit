@@ -254,7 +254,10 @@ function Remove-StoredSecret {
     try {
         # Ensure SecretStore is unlocked
         $null = Get-SecretInfo -Vault "SecretStore" -ErrorAction Stop
-        Remove-Secret -Name $Name
+        # -ErrorAction Stop: Remove-Secret's "secret not found" error is
+        # non-terminating — without Stop the catch never fires and the success
+        # message prints right after the error.
+        Remove-Secret -Name $Name -ErrorAction Stop
         Write-Host "✅ Secret '$Name' removed!" -ForegroundColor Green
     }
     catch {
@@ -263,7 +266,7 @@ function Remove-StoredSecret {
             Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
             try {
                 Unlock-SecretStore
-                Remove-Secret -Name $Name
+                Remove-Secret -Name $Name -ErrorAction Stop
                 Write-Host "✅ Secret '$Name' removed!" -ForegroundColor Green
             }
             catch {

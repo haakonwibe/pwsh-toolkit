@@ -119,7 +119,10 @@ function prj {
     }
 
     if ($Match) {
-        $hit = $projects | Where-Object { $_.Label -like "*$Match*" -or $_.Path -like "*$Match*" } | Select-Object -First 1
+        # Escaped so wildcard metacharacters in the input match literally
+        # instead of throwing (e.g. an unbalanced '[').
+        $safe = [WildcardPattern]::Escape($Match)
+        $hit = $projects | Where-Object { $_.Label -like "*$safe*" -or $_.Path -like "*$safe*" } | Select-Object -First 1
         if ($hit) { Invoke-JumpTo -Path $hit.Path; return }
         Write-Host "  No project matching '$Match'." -ForegroundColor Yellow
         return

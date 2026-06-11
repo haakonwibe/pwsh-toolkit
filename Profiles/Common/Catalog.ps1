@@ -80,7 +80,13 @@ function Get-ToolkitCommand {
 
     $files = @()
     $files += Get-ChildItem -Path (Join-Path $root 'Common\*.ps1') -ErrorAction Ignore
-    $files += Get-ChildItem -Path (Join-Path $root 'M365\*.ps1')   -ErrorAction Ignore
+    # M365/*.ps1 are only dot-sourced when Microsoft.Graph is installed and
+    # Features.DisableM365 is off (see the loader). Mirror what actually loaded —
+    # Connect-Tenant (GraphConnection.ps1) is the sentinel — so `toolkit` never
+    # advertises commands that would throw CommandNotFoundException.
+    if (Test-Path -LiteralPath 'Function:\Connect-Tenant') {
+        $files += Get-ChildItem -Path (Join-Path $root 'M365\*.ps1') -ErrorAction Ignore
+    }
     if ($script:Config.ToolkitRoot) {
         $dird = Join-Path $script:Config.ToolkitRoot 'DownloadsOrganizer\Get-DirDescriptions.ps1'
         if (Test-Path -LiteralPath $dird) { $files += Get-Item -LiteralPath $dird }

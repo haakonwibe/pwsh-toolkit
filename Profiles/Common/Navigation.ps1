@@ -220,7 +220,10 @@ function j {
 
     if ($Match) {
         # 1) Try the configured bookmark list first — fuzzy match against label or path.
-        $hit = $items | Where-Object { $_.Label -like "*$Match*" -or $_.Path -like "*$Match*" } | Select-Object -First 1
+        #    Escape the input so wildcard metacharacters (an unbalanced '[' throws
+        #    in -like) are matched literally instead of crashing the command.
+        $safe = [WildcardPattern]::Escape($Match)
+        $hit = $items | Where-Object { $_.Label -like "*$safe*" -or $_.Path -like "*$safe*" } | Select-Object -First 1
         if ($hit) { Invoke-JumpTo -Path $hit.Path; return }
 
         # 2) No bookmark match — try the argument as a literal directory path.
