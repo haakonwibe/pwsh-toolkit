@@ -9,9 +9,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-11
+
 ### Changed
 
 - **BREAKING:** `Connect-Graph`/`Disconnect-Graph` renamed to `Connect-Tenant`/`Disconnect-Tenant` — the old names were silently shadowed by Microsoft.Graph.Authentication's own `Connect-Graph` alias (aliases outrank functions), so the preset-scopes versions never actually ran once that module loaded.
+- `Connect-Tenant` now defaults to read-only scopes (enough for every toolkit M365 command) instead of tenant-wide write consent. Opt into write tiers explicitly: `-Access Write` (user/group management) or `-Access Full` (directory + app-registration writes).
 - The loader now wraps every dot-source (Common, M365, Machines, Hosts) in per-file error isolation: one broken file warns and is skipped instead of killing everything that loads after it.
 - Profile load no longer auto-imports Microsoft.Graph.Authentication on shells with the Graph SDK installed — the OMP Graph indicator now checks loaded modules only (saves hundreds of ms per shell start) and clears a stale `POSH_GRAPH` inherited from a parent shell.
 - The VS Code host override template is now `Hosts/VisualStudioCodeHost.ps1.example`, matching the name the loader actually computes from `(Get-Host).Name`; docs corrected throughout (Windows Terminal and plain VS Code terminals report `ConsoleHost` — branch on `$env:WT_SESSION` / `$env:TERM_PROGRAM`).
