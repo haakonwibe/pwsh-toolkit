@@ -207,7 +207,7 @@ Set `Prompt = 'OhMyPosh'` for the polished Oh My Posh variant (requires `oh-my-p
 ### M365 Functions (Loaded if Microsoft.Graph module is available)
 
 **Graph Connection:**
-- `Connect-Tenant` - Connect to Microsoft Graph with preset scopes — read-only by default; `-Access Write` adds user/group management, `-Access Full` adds directory + app-registration writes
+- `Connect-Tenant` - Connect to Microsoft Graph with preset scopes. Read-only by default; `-Access Write` adds user/group management, `-Access Full` adds directory and app-registration writes
 - `Disconnect-Tenant` - Disconnect from Microsoft Graph
 
 **Exchange Connection:**

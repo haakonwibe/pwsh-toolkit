@@ -9,32 +9,32 @@
 function Connect-Tenant {
     <#
     .SYNOPSIS
-        Connect to Microsoft Graph with preset scopes — read-only by default.
+        Connect to Microsoft Graph with preset scopes. Read-only by default.
     .DESCRIPTION
-        Wraps Connect-MgGraph with the scope sets the toolkit's M365 commands
-        need, so you never have to remember Graph permission names:
+        Wraps Connect-MgGraph with predefined scope sets, so you do not have
+        to remember the Graph permission names:
 
-          ReadOnly (default)  Inspect-everything scopes. Enough for
-                              Get-TenantOverview, Get-TeamsInfo, and any
-                              read-only reporting.
-          Write               Adds day-to-day user and group management
+          ReadOnly (default)  Read-only scopes covering all toolkit M365
+                              commands (Get-TenantOverview, Get-TeamsInfo)
+                              and general reporting.
+          Write               Adds user and group management
                               (User.ReadWrite.All, Group.ReadWrite.All).
           Full                Adds directory-wide and app-registration writes
                               (Directory.ReadWrite.All, Application.ReadWrite.All).
 
-        Re-run with a higher tier when you actually need to modify something —
-        Connect-MgGraph consents the extra scopes incrementally.
+        Run the command again with a higher tier when you need to modify
+        something. Connect-MgGraph consents the extra scopes incrementally.
 
-        Note: Microsoft Entra remembers consent per app+user. Once a write tier
-        has been granted, later tokens can still carry those scopes even when
-        you reconnect ReadOnly — the tiers control what you CONSENT to, they
-        are not per-session enforcement.
+        Note: Microsoft Entra remembers consent per app and user. After a
+        write tier has been granted once, later tokens can still include
+        those scopes even if you reconnect with ReadOnly. The tiers control
+        what you consent to, not what each session can do.
     .PARAMETER Access
         Scope tier: ReadOnly (default), Write, or Full.
     .EXAMPLE
         Connect-Tenant
 
-        Read-only session — the safe default for reporting and inspection.
+        Read-only session. The safe default for reporting and inspection.
     .EXAMPLE
         Connect-Tenant -Access Write
 
@@ -74,7 +74,7 @@ function Connect-Tenant {
         Write-Host "Tenant: $($context.TenantId)" -ForegroundColor Yellow
         Write-Host "Account: $($context.Account)" -ForegroundColor Yellow
         if ($Access -eq 'ReadOnly') {
-            Write-Host "Read-only session — Connect-Tenant -Access Write (or Full) when you need to modify things." -ForegroundColor DarkGray
+            Write-Host "Read-only session. Use Connect-Tenant -Access Write (or Full) to make changes." -ForegroundColor DarkGray
         }
     }
     catch {

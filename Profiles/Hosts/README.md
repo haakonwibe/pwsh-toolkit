@@ -20,7 +20,7 @@ Common hosts:
 - **Visual Studio Code Host** - The VS Code *PowerShell extension's* integrated console (file: `VisualStudioCodeHost.ps1`)
 - **Windows PowerShell ISE Host** - PowerShell ISE (legacy; file: `WindowsPowerShellISEHost.ps1`)
 
-> Windows Terminal is not its own host — it reports `ConsoleHost` like any other terminal running pwsh.
+> Windows Terminal is not its own host; it reports `ConsoleHost` like any other terminal running pwsh.
 
 ## Getting Your Host Name
 
@@ -60,7 +60,7 @@ Then edit the new `.ps1` and reopen the host (or `. $PROFILE`). The template shi
 > . (Join-Path $script:ProfileRoot 'Common\Prompt.ps1')
 > ```
 
-This file fires for the PowerShell *extension's* integrated console (host name "Visual Studio Code Host"). A plain VS Code terminal without the extension reports `ConsoleHost` — branch on `$env:TERM_PROGRAM -eq 'vscode'` in `ConsoleHost.ps1` for that case.
+This file applies to the PowerShell *extension's* integrated console (host name "Visual Studio Code Host"). A plain VS Code terminal without the extension reports `ConsoleHost`; branch on `$env:TERM_PROGRAM -eq 'vscode'` in `ConsoleHost.ps1` for that case.
 
 ```powershell
 # File: VisualStudioCodeHost.ps1
