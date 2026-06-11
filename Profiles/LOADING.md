@@ -113,7 +113,7 @@ flowchart TD
     MachLoad --> Hosts
 
     Hosts{"Hosts/<HostName>.ps1<br/>exists?"}
-    Hosts -->|Yes| HostLoad["Dot-source it<br/>(per-host overrides, e.g. VisualStudioCode.ps1)"]
+    Hosts -->|Yes| HostLoad["Dot-source it<br/>(per-host overrides, e.g. VisualStudioCodeHost.ps1)"]
     Hosts -->|No| OmpTail
     HostLoad --> OmpTail
 
@@ -158,7 +158,7 @@ The shallow merge means: if the user defines `Features = @{ DisableM365 = $true 
 | 4 | Enumerate `Common/*.ps1` **alphabetically** and dot-source each. | Skip `Prompt.ps1` when `Prompt` is `'OhMyPosh'` or `'Default'`. |
 | 5 | If `Microsoft.Graph` is installed AND `Features.DisableM365` is false: enumerate `M365/*.ps1` and dot-source. | Skipped silently when the module isn't present. |
 | 6 | If `Machines/{COMPUTERNAME}.ps1` exists: dot-source. | Per-machine overrides land here. |
-| 7 | If `Hosts/{HostName}.ps1` exists: dot-source. | Per-host overrides (e.g. `VisualStudioCode.ps1`). |
+| 7 | If `Hosts/{HostName}.ps1` exists: dot-source. | Per-host overrides (e.g. `VisualStudioCodeHost.ps1`; plain terminals report `ConsoleHost`). |
 | 8 | If `Prompt = 'OhMyPosh'`: wire `Update-PoshGraphStatus` + `PowerShell.OnIdle` event for Graph state; call `Enable-PoshTransientPrompt` if available. | |
 | 9 | Tail: `Show-ProfileTip` unless `$env:PSPROFILE_NO_TIPS` or `$Config.DisableStartupTips` is set. | Env var wins over config (handy for CI). |
 

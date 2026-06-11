@@ -6,10 +6,10 @@
 function Get-TeamsInfo($TeamName) {
     <#
     .SYNOPSIS
-        List Microsoft Teams (or one by name) via Graph. Needs Connect-Graph first.
+        List Microsoft Teams (or one by name) via Graph. Needs Connect-Tenant first.
     #>
     if (-not (Get-MgContext)) {
-        Write-Warning "Not connected to Microsoft Graph. Run Connect-Graph first."
+        Write-Warning "Not connected to Microsoft Graph. Run Connect-Tenant first."
         return
     }
 
@@ -23,10 +23,10 @@ function Get-TeamsInfo($TeamName) {
 function Get-TenantOverview {
     <#
     .SYNOPSIS
-        Print comprehensive M365 tenant statistics in one shot. Needs Connect-Graph first.
+        Print comprehensive M365 tenant statistics in one shot. Needs Connect-Tenant first.
     #>
     if (-not (Get-MgContext)) {
-        Write-Warning "Not connected to Microsoft Graph. Run Connect-Graph first."
+        Write-Warning "Not connected to Microsoft Graph. Run Connect-Tenant first."
         return
     }
 

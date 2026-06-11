@@ -154,8 +154,15 @@ if (Test-Path $commonPath) {
     Get-ChildItem "$commonPath\*.ps1" -ErrorAction SilentlyContinue |
         Where-Object { -not ($skipPrompt -and $_.Name -eq 'Prompt.ps1') } |
         ForEach-Object {
-            Write-Verbose "  Loading: $($_.Name)"
-            . $_.FullName
+            # Per-file isolation: a load-time throw in one file must not kill
+            # everything that loads after it (remaining Common, M365, Machines,
+            # Hosts, the prompt tail). try/catch adds no scope, so dot-sourcing
+            # still lands definitions in the profile scope as before. ($file,
+            # not $_ — inside catch, $_ is the error record.)
+            $file = $_
+            Write-Verbose "  Loading: $($file.Name)"
+            try { . $file.FullName }
+            catch { Write-Warning "pwsh-toolkit: failed to load Common\$($file.Name): $_" }
         }
 } else {
     Write-Warning "Common profile directory not found: $commonPath"
@@ -166,8 +173,10 @@ $disableM365 = [bool]$script:Config.Features.DisableM365
 if (-not $disableM365 -and (Get-Module -ListAvailable -Name Microsoft.Graph)) {
     if (Test-Path $m365Path) {
         Get-ChildItem "$m365Path\*.ps1" -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Verbose "  Loading: $($_.Name)"
-            . $_.FullName
+            $file = $_
+            Write-Verbose "  Loading: $($file.Name)"
+            try { . $file.FullName }
+            catch { Write-Warning "pwsh-toolkit: failed to load M365\$($file.Name): $_" }
         }
     }
 }
@@ -176,7 +185,8 @@ if (-not $disableM365 -and (Get-Module -ListAvailable -Name Microsoft.Graph)) {
 $machineConfig = Join-Path $machinePath "$env:COMPUTERNAME.ps1"
 if (Test-Path $machineConfig) {
     Write-Verbose "Loading machine-specific configuration: $env:COMPUTERNAME"
-    . $machineConfig
+    try { . $machineConfig }
+    catch { Write-Warning "pwsh-toolkit: failed to load Machines\$env:COMPUTERNAME.ps1: $_" }
 }
 
 # ─── Per-host overrides ─────────────────────────────────────────────────────
@@ -184,31 +194,36 @@ $hostName   = (Get-Host).Name -replace ' ', ''
 $hostConfig = Join-Path $hostPath "$hostName.ps1"
 if (Test-Path $hostConfig) {
     Write-Verbose "Loading host-specific configuration: $hostName"
-    . $hostConfig
+    try { . $hostConfig }
+    catch { Write-Warning "pwsh-toolkit: failed to load Hosts\$hostName.ps1: $_" }
 }
 
 # ─── OhMyPosh tail: Graph indicator + transient prompt ─────────────────────
 if ($script:Config.Prompt -eq 'OhMyPosh') {
     # Sync Microsoft.Graph connection state into $env:POSH_GRAPH for the OMP
-    # envvar segment. Connect-Graph is owned by Microsoft.Graph.Authentication
-    # so we can't override it — hook the prompt cycle instead.
+    # envvar segment, hooked on the prompt's idle cycle.
     #
-    # Both sites guard Get-MgContext with Get-Command because -ErrorAction
-    # SilentlyContinue does NOT suppress command-not-found (see ARCHITECTURE.md
-    # convention #8). Without the guard the function throws every time it's
-    # called — and the OnIdle handler fires on every keystroke.
+    # The guard is Get-Module (loaded modules only), NOT Get-Command: command
+    # discovery would auto-import Microsoft.Graph.Authentication on every shell
+    # start (hundreds of ms) just to read an empty context. Until something
+    # loads that module (Connect-Tenant, Connect-MgGraph) this session cannot
+    # be connected, so the only job is clearing a POSH_GRAPH value inherited
+    # from a parent shell. Once the module IS loaded, Get-MgContext exists, so
+    # the ARCHITECTURE.md convention-#8 command-not-found hazard doesn't apply.
     function Update-PoshGraphStatus {
-        if (-not (Get-Command Get-MgContext -ErrorAction Ignore)) { return }
+        if (-not (Get-Module Microsoft.Graph.Authentication)) {
+            Remove-Item Env:\POSH_GRAPH -ErrorAction Ignore
+            return
+        }
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
         if ($ctx) { $env:POSH_GRAPH = $ctx.Account ?? 'Connected' }
         else      { Remove-Item Env:\POSH_GRAPH -ErrorAction Ignore }
     }
     Update-PoshGraphStatus
+    # The action runs in this session's state, so it can call the function
+    # directly — one source of truth for the indicator logic.
     Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -MaxTriggerCount 0 -Action {
-        if (-not (Get-Command Get-MgContext -ErrorAction Ignore)) { return }
-        $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($ctx) { $env:POSH_GRAPH = $ctx.Account ?? 'Connected' }
-        else      { Remove-Item Env:\POSH_GRAPH -ErrorAction Ignore }
+        Update-PoshGraphStatus
     } | Out-Null
 
     if (Get-Command Enable-PoshTransientPrompt -ErrorAction Ignore) {

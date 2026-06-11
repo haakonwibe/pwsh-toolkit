@@ -157,7 +157,8 @@ Pop-Location
 
         # Probe 2: write a tiny config.psd1 forcing OhMyPosh mode, then load.
         # Exercises Update-PoshGraphStatus + the OnIdle registration path —
-        # both of which call Get-MgContext and need the Get-Command guard.
+        # guarded by Get-Module (loaded modules only) so profile load never
+        # auto-imports Microsoft.Graph.Authentication just to read the context.
         @"
 @{
     Prompt = 'OhMyPosh'
@@ -171,7 +172,7 @@ Pop-Location
 
         # Probe 3: the documented per-host pattern — a Hosts/<host>.ps1 that
         # swaps Oh My Posh for the lightweight Custom prompt (the shape shipped in
-        # Hosts/VisualStudioCode.ps1.example). Config selects OhMyPosh; the host
+        # Hosts/VisualStudioCodeHost.ps1.example). Config selects OhMyPosh; the host
         # file flips $script:Config.Prompt to 'Custom' (which also makes the OMP
         # tail skip itself) and dot-sources the Custom prompt.
         @"

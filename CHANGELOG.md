@@ -9,6 +9,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** `Connect-Graph`/`Disconnect-Graph` renamed to `Connect-Tenant`/`Disconnect-Tenant` — the old names were silently shadowed by Microsoft.Graph.Authentication's own `Connect-Graph` alias (aliases outrank functions), so the preset-scopes versions never actually ran once that module loaded.
+- The loader now wraps every dot-source (Common, M365, Machines, Hosts) in per-file error isolation: one broken file warns and is skipped instead of killing everything that loads after it.
+- Profile load no longer auto-imports Microsoft.Graph.Authentication on shells with the Graph SDK installed — the OMP Graph indicator now checks loaded modules only (saves hundreds of ms per shell start) and clears a stale `POSH_GRAPH` inherited from a parent shell.
+- The VS Code host override template is now `Hosts/VisualStudioCodeHost.ps1.example`, matching the name the loader actually computes from `(Get-Host).Name`; docs corrected throughout (Windows Terminal and plain VS Code terminals report `ConsoleHost` — branch on `$env:WT_SESSION` / `$env:TERM_PROGRAM`).
+
+### Fixed
+
+- `install.ps1` no longer claims ownership of a personal profile that merely dot-sources the loader — reinstall/`-Uninstall` previously deleted such profiles without backup. Ownership now requires a symlink or a pure stub.
+- `install.ps1` stub generation escapes apostrophes in the repo path (e.g. `C:\Users\O'Brien`), which previously produced a profile-breaking parse error.
+- `tagdl` no longer overwrites `_downloads-index.csv` with only the current run's rows — partial (`-Limit`) runs now merge with the existing index instead of dropping previously tagged files.
+- `tagdl` progress bar no longer sits at 100% for whole runs (denominator collapsed to 1 when `-Limit` was unset).
+- `winup -All` no longer blocks on the `Proceed? [Y/n]` prompt — non-interactive and elevated unattended runs work as documented.
+- `Remove-StoredSecret` no longer reports success after a failed removal (missing `-ErrorAction Stop` on `Remove-Secret`).
+- `sudo`'s new-window fallback re-quotes arguments, so paths with spaces survive elevation.
+- `j`, `prj`, `rdp`/`rps` fuzzy matching no longer crashes on wildcard metacharacters in the search text (e.g. an unbalanced `[`).
+- `toolkit`/`Get-ToolkitCommand` no longer advertises M365 commands on machines where M365/ never loaded.
+- `Get-Content file.json | json` (without `-Raw`) now renders the document instead of a JSON array of its source lines.
+
 ## [0.1.63] - 2026-06-09
 
 A modular PowerShell 7 profile + toolkit for Windows — 56 commands wired up

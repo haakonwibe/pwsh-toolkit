@@ -5,10 +5,11 @@
 # "<HostName>.ps1"; this one uses an imaginary host name and ends in
 # ".example", so it can never match. The host name is:
 #
-#   (Get-Host).Name -replace ' ', ''      # "Visual Studio Code" -> "VisualStudioCode"
+#   (Get-Host).Name -replace ' ', ''      # "Visual Studio Code Host" -> "VisualStudioCodeHost"
 #
-# Common values: ConsoleHost (pwsh.exe and Windows Terminal both report this),
-# VisualStudioCode (VS Code's integrated terminal), Windows PowerShell ISE.
+# Common values: ConsoleHost (pwsh.exe, Windows Terminal, and the plain VS Code
+# integrated terminal all report this), VisualStudioCodeHost (the PowerShell
+# extension's integrated console), WindowsPowerShellISEHost (the ISE).
 #
 # To use it:
 #   1. Get your host name:   (Get-Host).Name -replace ' ', ''

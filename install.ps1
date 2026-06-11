@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Install the pwsh-toolkit profile into your $PROFILE.
 
@@ -114,8 +114,13 @@ function Test-ExistingPwshToolkitInstall {
     if (-not (Test-Path -LiteralPath $profilePath)) { return $false }
     $item = Get-Item -LiteralPath $profilePath -Force
     if ($item.LinkType -and $item.Target -like '*pwsh-toolkit-profile.ps1') { return $true }
+    # A file counts as ours only if it IS the stub: comments/blank lines plus a
+    # single dot-source of the loader. A personal profile that merely contains
+    # the dot-source line among its own content must never be replaced or removed.
     $content = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
-    return ($content -like '*pwsh-toolkit-profile.ps1*')
+    if (-not $content) { return $false }
+    $meaningful = @($content -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
+    return ($meaningful.Count -eq 1 -and $meaningful[0] -match '^\.\s.*pwsh-toolkit-profile\.ps1')
 }
 
 Write-Host ''
@@ -136,7 +141,12 @@ if ($Uninstall) {
     elseif (-not (Test-ExistingPwshToolkitInstall)) {
         # Don't delete a profile we didn't create.
         Write-Warning "The profile at $profilePath isn't a pwsh-toolkit install — leaving it untouched."
-        Write-Host "  If you're sure it should go, remove it yourself." -ForegroundColor DarkGray
+        $content = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
+        if ($content -like '*pwsh-toolkit-profile.ps1*') {
+            Write-Host "  It does reference pwsh-toolkit-profile.ps1 — if you wired that up yourself, delete that line to unhook the toolkit." -ForegroundColor DarkGray
+        } else {
+            Write-Host "  If you're sure it should go, remove it yourself." -ForegroundColor DarkGray
+        }
     }
     elseif ($PSCmdlet.ShouldProcess($profilePath, 'Remove pwsh-toolkit profile')) {
         Remove-Item -LiteralPath $profilePath -Force
@@ -261,9 +271,12 @@ if ($canSymlink) {
         Write-Host "✓ Created symlink: $profilePath → $loader" -ForegroundColor Green
     }
 } else {
+    # Escape embedded single quotes so a repo path like C:\Users\O'Brien still
+    # produces a stub that parses.
+    $loaderQuoted = "'{0}'" -f ($loader -replace "'", "''")
     $stubContent = @"
 # pwsh-toolkit loader stub (created by install.ps1)
-. '$loader'
+. $loaderQuoted
 "@
     if ($PSCmdlet.ShouldProcess($profilePath, "Write dot-source stub → $loader")) {
         Set-Content -LiteralPath $profilePath -Value $stubContent -Encoding utf8

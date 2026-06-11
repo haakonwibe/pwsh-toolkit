@@ -207,8 +207,8 @@ Set `Prompt = 'OhMyPosh'` for the polished Oh My Posh variant (requires `oh-my-p
 ### M365 Functions (Loaded if Microsoft.Graph module is available)
 
 **Graph Connection:**
-- `Connect-Graph` - Connect to Microsoft Graph with comprehensive scopes
-- `Disconnect-Graph` - Disconnect from Microsoft Graph
+- `Connect-Tenant` - Connect to Microsoft Graph with comprehensive scopes
+- `Disconnect-Tenant` - Disconnect from Microsoft Graph
 
 **Exchange Connection:**
 - `Connect-Exchange` - Connect to Exchange Online
@@ -252,9 +252,8 @@ Set-Alias -Name np -Value notepad.exe
 ```
 
 Common host names:
-- `ConsoleHost` - Regular PowerShell console
-- `VisualStudioCode` - VS Code integrated terminal
-- `WindowsTerminal` - Windows Terminal
+- `ConsoleHost` - Plain pwsh — a regular console window, Windows Terminal, or a plain VS Code terminal (branch on `$env:WT_SESSION` / `$env:TERM_PROGRAM` inside `ConsoleHost.ps1`)
+- `VisualStudioCodeHost` - The VS Code PowerShell extension's integrated console
 
 ## Debugging
 

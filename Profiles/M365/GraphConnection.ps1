@@ -2,8 +2,11 @@
 # Provides easy connectivity to Microsoft Graph for M365 administration
 # Requires: Microsoft.Graph PowerShell module
 
-# Core Graph connection for most M365 work
-function Connect-Graph {
+# Core Graph connection for most M365 work.
+# Named Connect-Tenant (not Connect-Graph) on purpose: Microsoft.Graph.Authentication
+# exports a Connect-Graph ALIAS for Connect-MgGraph, and aliases outrank functions,
+# so a Connect-Graph function here would be silently shadowed once that module loads.
+function Connect-Tenant {
     <#
     .SYNOPSIS
         Connect to Microsoft Graph with the toolkit's preset admin scopes.
@@ -31,8 +34,8 @@ function Connect-Graph {
     }
 }
 
-# Clean disconnect for Graph
-function Disconnect-Graph {
+# Clean disconnect for Graph (same shadowing caveat as Connect-Tenant above)
+function Disconnect-Tenant {
     <#
     .SYNOPSIS
         Disconnect the current Microsoft Graph session.

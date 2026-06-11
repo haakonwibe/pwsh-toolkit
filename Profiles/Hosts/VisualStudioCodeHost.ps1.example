@@ -1,11 +1,16 @@
 # ============================================================================
-# VS Code integrated terminal — host overrides (EXAMPLE / TEMPLATE)
+# VS Code PowerShell extension terminal — host overrides (EXAMPLE / TEMPLATE)
 # ----------------------------------------------------------------------------
 # This sample is NOT loaded (it ends in ".example"). To activate it, copy it to
-# the host's real name — for the VS Code integrated terminal that is exactly
-# "VisualStudioCode.ps1" (from `(Get-Host).Name -replace ' ', ''`):
+# the host's real name. The PowerShell extension's integrated console reports
+# (Get-Host).Name = "Visual Studio Code Host", so the file name is exactly
+# "VisualStudioCodeHost.ps1" (spaces removed):
 #
-#     Copy-Item VisualStudioCode.ps1.example VisualStudioCode.ps1
+#     Copy-Item VisualStudioCodeHost.ps1.example VisualStudioCodeHost.ps1
+#
+# NOTE: a plain VS Code integrated terminal (without the PowerShell extension)
+# runs ordinary pwsh and reports "ConsoleHost" — for that, put the overrides in
+# ConsoleHost.ps1 behind `if ($env:TERM_PROGRAM -eq 'vscode') { ... }`.
 #
 # Then reopen the terminal (or . $PROFILE). Real "<HostName>.ps1" files here are
 # .gitignored; this template is tracked as documentation. Loaded AFTER

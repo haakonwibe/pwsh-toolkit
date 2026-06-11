@@ -107,8 +107,8 @@ The path segment can replace any directory prefix with a friendly icon + label. 
 
 The purple M365 segment automatically detects Microsoft Graph connection state:
 
-- **Connect** with `Connect-Graph` or `Connect-MgGraph` — the segment appears on the next prompt
-- **Disconnect** with `Disconnect-Graph` or `Disconnect-MgGraph` — the segment disappears
+- **Connect** with `Connect-Tenant` or `Connect-MgGraph` — the segment appears on the next prompt
+- **Disconnect** with `Disconnect-Tenant` or `Disconnect-MgGraph` — the segment disappears
 - Detection runs via a `PowerShell.OnIdle` engine event registered by the loader (only when `Prompt = 'OhMyPosh'`), so it works regardless of how you connect
 
 ## Customizing the theme

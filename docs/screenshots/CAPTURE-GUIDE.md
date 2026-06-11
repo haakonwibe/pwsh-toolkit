@@ -77,7 +77,7 @@ When the picker is open, toggle 1-2 items with **Space** so the checkboxes are v
 
 ## Optional: the OMP prompt segments
 
-If you want a sixth shot purely for the poster's hero block, capture just a single prompt line with all the trimmings showing — admin icon, M365 icon (after `Connect-Graph`), folder name, git status. Save as `prompt-segments.png`. This one's purely decorative; the README doesn't depend on it.
+If you want a sixth shot purely for the poster's hero block, capture just a single prompt line with all the trimmings showing — admin icon, M365 icon (after `Connect-Tenant`), folder name, git status. Save as `prompt-segments.png`. This one's purely decorative; the README doesn't depend on it.
 
 ## After capture
 

@@ -439,6 +439,8 @@ if ($total -eq 0) { exit 0 }
 
 $apiKeySecure = $null
 $results = New-Object System.Collections.Generic.List[object]
+# Progress denominator: how many files this run will actually visit.
+$progressGoal = if ($Limit -gt 0) { [math]::Min($total, $Limit) } else { $total }
 $processed = 0
 $tagged = 0
 $skipped = 0
@@ -450,7 +452,7 @@ foreach ($file in $files) {
     $processed++
 
     Write-Progress -Activity 'Tagging files' -Status $file.Name `
-        -PercentComplete ([math]::Min(100, [int](($processed / [math]::Max(1, [math]::Min($total, $Limit)) * 100))))
+        -PercentComplete ([math]::Min(100, [int]($processed / $progressGoal * 100)))
 
     if (Test-SkipFile -File $file) {
         Write-Host ("  SKIP  {0}" -f $file.Name) -ForegroundColor DarkGray
@@ -544,10 +546,18 @@ Write-Progress -Activity 'Tagging files' -Completed
 # Final cache write
 Save-Cache -Cache $cache
 
-# Write the index CSV (audit / portable copy)
+# Write the index CSV (audit / portable copy). Merge with the existing index
+# so a -Limit or partial run doesn't drop rows for files not visited this run —
+# the CSV is the fallback for files that lost their ADS (e.g. copied off-volume).
 if ($results.Count -gt 0 -and -not $WhatIfPreference) {
     $indexPath = Join-Path $Path '_downloads-index.csv'
-    $results | Sort-Object SubBucket, Name | Export-Csv -LiteralPath $indexPath -NoTypeInformation -Encoding utf8
+    $rows = @($results)
+    if (Test-Path -LiteralPath $indexPath) {
+        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($r in $results) { $null = $seen.Add($r.Name) }
+        $rows += @(Import-Csv -LiteralPath $indexPath | Where-Object { -not $seen.Contains($_.Name) })
+    }
+    $rows | Sort-Object SubBucket, Name | Export-Csv -LiteralPath $indexPath -NoTypeInformation -Encoding utf8
     Write-Host "`n  Index:  $indexPath" -ForegroundColor Gray
 }
 
