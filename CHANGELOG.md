@@ -9,6 +9,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The M365 module gate is now discoverable: `toolkit` lists the Microsoft 365 group as "Not loaded" with the reason (Microsoft.Graph not installed, or `Features.DisableM365`) instead of omitting it, and the loader logs the reason under `-Verbose`.
+- Startup tips only suggest commands that exist in the current session, so a machine without Microsoft.Graph is no longer told to try `Connect-Tenant`.
+
 ## [0.2.0] - 2026-06-11
 
 ### Changed

@@ -176,5 +176,16 @@ function Show-Toolkit {
         }
         Write-Host ''
     }
+
+    # When M365/ was not loaded, say so instead of omitting the group.
+    # Otherwise there is no way to discover that these commands exist or
+    # what enables them.
+    if (-not (Test-Path -LiteralPath 'Function:\Connect-Tenant')) {
+        $hint = if ($script:Config.Features.DisableM365) { 'Features.DisableM365 is set in config.psd1' }
+                else { 'Install-Module Microsoft.Graph to enable' }
+        Write-Host '  Microsoft 365' -ForegroundColor Yellow
+        Write-Host "    Not loaded ($hint). Provides Connect-Tenant, Get-TenantOverview, Get-TeamsInfo, Connect-Exchange." -ForegroundColor DarkGray
+        Write-Host ''
+    }
 }
 Set-Alias toolkit Show-Toolkit

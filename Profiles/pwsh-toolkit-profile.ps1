@@ -179,6 +179,14 @@ if (-not $disableM365 -and (Get-Module -ListAvailable -Name Microsoft.Graph)) {
             catch { Write-Warning "pwsh-toolkit: failed to load M365\$($file.Name): $_" }
         }
     }
+} elseif ($disableM365) {
+    Write-Verbose 'M365/ skipped: Features.DisableM365 is set in config.psd1.'
+} else {
+    # The gate requires the Microsoft.Graph meta-module by exact name;
+    # individual submodules (e.g. Microsoft.Graph.Authentication) are not
+    # enough. `toolkit` shows the same hint, so this is discoverable
+    # without -Verbose too.
+    Write-Verbose 'M365/ skipped: Microsoft.Graph module not installed. Install-Module Microsoft.Graph to enable.'
 }
 
 # ─── Per-machine overrides ──────────────────────────────────────────────────

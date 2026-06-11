@@ -156,7 +156,7 @@ The shallow merge means: if the user defines `Features = @{ DisableM365 = $true 
 | 2 | Load `config.example.psd1` → optionally merge `config.psd1` → auto-detect `ToolkitRoot` + `OneDriveOrg`. | Result lives on `$script:Config`. |
 | 3 | If `Prompt = 'OhMyPosh'`: init `oh-my-posh`, import `Terminal-Icons`. | Fails soft if `oh-my-posh` isn't on PATH — warns and continues. |
 | 4 | Enumerate `Common/*.ps1` **alphabetically** and dot-source each. | Skip `Prompt.ps1` when `Prompt` is `'OhMyPosh'` or `'Default'`. |
-| 5 | If `Microsoft.Graph` is installed AND `Features.DisableM365` is false: enumerate `M365/*.ps1` and dot-source. | Skipped silently when the module isn't present. |
+| 5 | If `Microsoft.Graph` is installed AND `Features.DisableM365` is false: enumerate `M365/*.ps1` and dot-source. | When skipped, a verbose message states the reason, and `toolkit` lists the group as "Not loaded" with the install hint. The gate needs the `Microsoft.Graph` meta-module by exact name; submodules alone do not open it. |
 | 6 | If `Machines/{COMPUTERNAME}.ps1` exists: dot-source. | Per-machine overrides land here. |
 | 7 | If `Hosts/{HostName}.ps1` exists: dot-source. | Per-host overrides (e.g. `VisualStudioCodeHost.ps1`; plain terminals report `ConsoleHost`). |
 | 8 | If `Prompt = 'OhMyPosh'`: wire `Update-PoshGraphStatus` + `PowerShell.OnIdle` event for Graph state; call `Enable-PoshTransientPrompt` if available. | |

@@ -52,6 +52,17 @@ function Show-ProfileTip {
 
     if (-not $script:ProfileTips -or $script:ProfileTips.Count -eq 0) { return }
 
+    # Only offer tips whose command exists in this session. Every tip heading
+    # starts with its command name, so check that token against the Function:
+    # and Alias: drives (cheap, no module auto-loading). Without this, the
+    # M365 tips tell users without Microsoft.Graph to try commands that were
+    # never loaded.
+    $tips = @($script:ProfileTips | Where-Object {
+        $first = ($_.H -split ' ')[0]
+        (Test-Path -LiteralPath "Function:\$first") -or (Test-Path -LiteralPath "Alias:\$first")
+    })
+    if ($tips.Count -eq 0) { return }
+
     $stateDir  = Join-Path $env:LOCALAPPDATA 'PSProfile'
     $stateFile = Join-Path $stateDir 'last-tip.txt'
     $lastIdx   = -1
@@ -61,7 +72,7 @@ function Show-ProfileTip {
     }
 
     # Pick a fresh tip — avoids repeating the same one when you spawn multiple shells in a row.
-    $count = $script:ProfileTips.Count
+    $count = $tips.Count
     do { $idx = Get-Random -Minimum 0 -Maximum $count } while ($count -gt 1 -and $idx -eq $lastIdx)
 
     try {
@@ -74,7 +85,7 @@ function Show-ProfileTip {
         Write-Debug "Tip-state write failed (non-fatal): $($_.Exception.Message)"
     }
 
-    $tip = $script:ProfileTips[$idx]
+    $tip = $tips[$idx]
     Write-Host ('💡 ' + $tip.H) -ForegroundColor Cyan
     Write-Host ('   ' + $tip.E) -ForegroundColor DarkGray
 }
