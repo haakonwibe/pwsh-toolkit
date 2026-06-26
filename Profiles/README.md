@@ -140,6 +140,7 @@ OneDrive paths use `$Config.OneDriveOrg` (auto-detected from `$env:OneDriveComme
 - `winup` - Interactive winget upgrade picker (Space toggles, A toggles all, Enter confirms). Upgrades only what you select
 - `winup -All` - Skip the picker and upgrade everything
 - `winup -Elevated` - Re-run elevated via a real `sudo` (gsudo / Windows' built-in `sudo`, else a new elevated window) so you approve one UAC prompt instead of one per package. Extra args pass through (e.g. `winup -Elevated -All`)
+- Upgrading PowerShell itself can't happen in-process (Restart Manager would close the running session), so it's deferred to a detached process and the rest of the batch completes first; its result lands in a `…-deferred.log` side file
 - CMTrace-XML logs land in `C:\ProgramData\WingetUpgrade\Logs\`. Implementation in `WingetUpgrade/Invoke-WingetUpgrade.ps1`
 
 **Downloads (AI tagging + viewing):**

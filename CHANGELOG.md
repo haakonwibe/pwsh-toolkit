@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
 - The M365 module gate is now discoverable: `toolkit` lists the Microsoft 365 group as "Not loaded" with the reason (Microsoft.Graph not installed, or `Features.DisableM365`) instead of omitting it, and the loader logs the reason under `-Verbose`.
 - Startup tips only suggest commands that exist in the current session, so a machine without Microsoft.Graph is no longer told to try `Connect-Tenant`.
 
+### Fixed
+
+- `winup` no longer strands the rest of the batch when PowerShell is among the upgrades. Upgrading the running interpreter let Windows Installer's Restart Manager close the script's own `pwsh.exe` host mid-loop, so every package listed after `Microsoft.PowerShell` was silently skipped and no summary was written (the log just stopped at the "Upgrading PowerShell" line). Self-replacing packages are now run last, in a detached Windows PowerShell process after the in-process batch finishes and the summary is logged; their result lands in a `…-deferred.log` side file in CMTrace format.
+
 ## [0.2.0] - 2026-06-11
 
 ### Changed

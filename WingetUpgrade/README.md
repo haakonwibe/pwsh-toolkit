@@ -57,9 +57,17 @@ Reload the profile (`. $PROFILE`) or open a new terminal after pulling.
 
 ---
 
+## 🔁 Upgrading PowerShell itself
+
+Upgrading the PowerShell that's *running the script* would have Windows Installer's Restart Manager close this session's own `pwsh.exe` mid-batch — taking the loop down with it, so anything queued after `Microsoft.PowerShell` never ran and no summary was written.
+
+To avoid that, any package in `$selfReplacingIds` (currently `Microsoft.PowerShell` / `…PowerShell.Preview`) is held back, run *after* the in-process batch, and handed to a **detached Windows PowerShell process** — never the pwsh being replaced — which waits for this session to exit and then performs the upgrade. Its result is written to a separate `…-deferred.log` (same CMTrace format). Transient CLIs the prompt merely shells out to (oh-my-posh, node, git) are *not* self-replacing — a clash there is just a normal retryable failure — so they stay in the main batch. To treat another package this way, add its winget `Id` to `$selfReplacingIds`.
+
+> Note: any *other* `pwsh` windows you have open are still fair game for Restart Manager to close — that's inherent to upgrading PowerShell while it's in use.
+
 ## 📝 Logging
 
-- Path: `C:\ProgramData\WingetUpgrade\Logs\winget-upgrade-YYYYMMDD-HHmmss.log`
+- Path: `C:\ProgramData\WingetUpgrade\Logs\winget-upgrade-YYYYMMDD-HHmmss.log` (plus `…-deferred.log` when a self-replacing package is upgraded — see above).
 - Captures: winget version, the list parsed from `winget upgrade`, every upgrade attempt with `Id`, version `X -> Y`, exit code, and a final summary table.
 - Winget itself writes a detailed install trace under `%LOCALAPPDATA%\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbcc\LocalState\DiagOutputDir\` — handy when a single upgrade fails.
 

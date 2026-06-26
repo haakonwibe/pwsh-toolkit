@@ -327,14 +327,38 @@ if (-not $chosen -or $chosen.Count -eq 0) {
     exit 0
 }
 
+# ---------- Partition: self-replacing packages run detached, last ----------
+# Restart Manager closes any process holding a file the installer must replace.
+# The only such file in a normal batch is this session's own host image — so a
+# package that upgrades the running interpreter would kill this loop mid-batch
+# (every package after it silently skipped, no summary written). We can't survive
+# that in-process, so those IDs are split out and handed to a detached
+# powershell.exe (Windows PowerShell — never the pwsh that's being replaced) once
+# everything else is done. Add an ID here only if upgrading it replaces a file
+# THIS session holds open; transient CLIs the prompt shells out to per render
+# (oh-my-posh, node, git) are not candidates — a clash there is just a normal
+# retryable "file in use" failure the loop already logs and steps past.
+$selfReplacingIds = @('Microsoft.PowerShell', 'Microsoft.PowerShell.Preview')
+$inProcess   = @($chosen | Where-Object { $_.Id -notin $selfReplacingIds })
+$deferred    = @($chosen | Where-Object { $_.Id -in $selfReplacingIds })
+$deferredIds = @($deferred.Id)
+
 # ---------- Confirm ----------
 Write-Host ''
 Write-Host '  About to upgrade:' -ForegroundColor Cyan
 foreach ($p in $chosen) {
-    Write-Host ("    - {0}  {1} -> {2}" -f `
+    $isDeferred = $deferredIds -contains $p.Id
+    $tail = if ($isDeferred) { '   (deferred — runs in a separate process)' } else { '' }
+    Write-Host ("    - {0}  {1} -> {2}{3}" -f `
         (Format-Cell $p.Name 45),
         (Format-Cell $p.Version 14),
-        (Format-Cell $p.Available 14))
+        (Format-Cell $p.Available 14),
+        $tail) -ForegroundColor $(if ($isDeferred) { 'DarkYellow' } else { 'Gray' })
+}
+if ($deferred.Count -gt 0) {
+    Write-Host ''
+    Write-Host '  Note: upgrading the running PowerShell would terminate this session, so the' -ForegroundColor DarkYellow
+    Write-Host '  package(s) marked above are handed to a detached process at the end.' -ForegroundColor DarkYellow
 }
 Write-Host ''
 # -All promises a non-interactive run (scheduled tasks, the -Elevated relaunch),
@@ -351,13 +375,13 @@ if ($All) {
     }
 }
 
-# ---------- Upgrade ----------
+# ---------- Upgrade (in-process batch) ----------
 $results = @()
 $idx = 0
-foreach ($p in $chosen) {
+foreach ($p in $inProcess) {
     $idx++
     Write-Host ''
-    Write-Host ("  [{0}/{1}] Upgrading {2} ({3})" -f $idx, $chosen.Count, $p.Name, $p.Id) -ForegroundColor Cyan
+    Write-Host ("  [{0}/{1}] Upgrading {2} ({3})" -f $idx, $inProcess.Count, $p.Name, $p.Id) -ForegroundColor Cyan
     Write-Log ("Upgrading {0} ({1}) {2} -> {3} [source={4}]" -f $p.Name, $p.Id, $p.Version, $p.Available, $p.Source)
 
     $wingetArgs = @(
@@ -392,19 +416,93 @@ foreach ($p in $chosen) {
     }
 }
 
-# ---------- Summary ----------
-Write-Host ''
-Write-Host '  Summary' -ForegroundColor Cyan
-Write-Host '  -------' -ForegroundColor Cyan
-$results | Format-Table -AutoSize | Out-String | ForEach-Object { Write-Host $_ }
+# ---------- Summary (in-process batch) ----------
+if ($results.Count -gt 0) {
+    Write-Host ''
+    Write-Host '  Summary' -ForegroundColor Cyan
+    Write-Host '  -------' -ForegroundColor Cyan
+    $results | Format-Table -AutoSize | Out-String | ForEach-Object { Write-Host $_ }
 
-# Write each table row as its own CMTrace info line so the file stays valid format throughout.
-$results | Format-Table -AutoSize | Out-String -Stream |
-    Where-Object { $_.Trim() } |
-    ForEach-Object { Add-Content -Path $logFile -Value (Format-CMTraceLine -Message $_ -Type 1) -Encoding utf8 }
+    # Write each table row as its own CMTrace info line so the file stays valid format throughout.
+    $results | Format-Table -AutoSize | Out-String -Stream |
+        Where-Object { $_.Trim() } |
+        ForEach-Object { Add-Content -Path $logFile -Value (Format-CMTraceLine -Message $_ -Type 1) -Encoding utf8 }
+}
 
 $failed = @($results | Where-Object { $_.Status -ne 'Success' })
-$finalLevel = if ($failed.Count -gt 0) { 'ERROR' } else { 'OK' }
-Write-Log ("Done. {0} succeeded, {1} failed. Log: {2}" -f ($results.Count - $failed.Count), $failed.Count, $logFile) -Level $finalLevel
+if ($results.Count -gt 0) {
+    $finalLevel = if ($failed.Count -gt 0) { 'ERROR' } else { 'OK' }
+    Write-Log ("Done. {0} succeeded, {1} failed. Log: {2}" -f ($results.Count - $failed.Count), $failed.Count, $logFile) -Level $finalLevel
+}
+
+# ---------- Deferred self-replacing upgrades (detached, after we're done) ----------
+# Run in-process these would close this very session. Hand them to a separate
+# Windows PowerShell process — never the pwsh being replaced — then exit so
+# Restart Manager finds nothing of ours holding the host files open. The child
+# waits for us to exit, upgrades each package, and records the result to a side
+# log in CMTrace format (any other pwsh windows you have open are still fair game
+# for Restart Manager to close — that is inherent to upgrading PowerShell live).
+if ($deferred.Count -gt 0) {
+    $deferredLog = Join-Path $LogDirectory ("winget-upgrade-{0:yyyyMMdd-HHmmss}-deferred.log" -f (Get-Date))
+    $wingetPath  = (Get-Command winget).Source
+
+    $pkgLiterals = foreach ($p in $deferred) {
+        "    [pscustomobject]@{{ Id = '{0}'; Name = '{1}'; Source = '{2}' }}" -f `
+            ($p.Id -replace "'", "''"), ($p.Name -replace "'", "''"), (([string]$p.Source) -replace "'", "''")
+    }
+
+    # Child runs under Windows PowerShell 5.1 (always present, never the package
+    # being upgraded), so keep this body 5.1-compatible. `$ stays literal for the
+    # child; $( ) is expanded now to bake in the paths and package list.
+    $childScript = @"
+`$ErrorActionPreference = 'Stop'
+`$sideLog    = '$($deferredLog -replace "'", "''")'
+`$wingetPath = '$($wingetPath -replace "'", "''")'
+
+function Format-CMTraceLine {
+    param([string]`$Message, [int]`$Type = 1, [string]`$Component = 'WingetUpgrade')
+    `$now    = Get-Date
+    `$offset = [int][System.TimeZoneInfo]::Local.GetUtcOffset(`$now).TotalMinutes
+    `$sign   = if (`$offset -ge 0) { '+' } else { '' }
+    '<![LOG[{0}]LOG]!><time="{1}{2}{3}" date="{4}" component="{5}" context="" type="{6}" thread="{7}" file="">' -f `$Message, `$now.ToString('HH:mm:ss.fff'), `$sign, `$offset, `$now.ToString('MM-dd-yyyy'), `$Component, `$Type, `$PID
+}
+function Write-Side {
+    param([string]`$Message, [int]`$Type = 1)
+    Add-Content -LiteralPath `$sideLog -Value (Format-CMTraceLine -Message `$Message -Type `$Type) -Encoding utf8
+}
+
+# Let the parent session exit first so Restart Manager has no in-use copy of the
+# host to close when the installer swaps the files.
+Start-Sleep -Seconds 3
+Write-Side 'Detached self-replacing upgrade pass started.'
+
+`$pkgs = @(
+$($pkgLiterals -join "`n")
+)
+`$fail = 0
+foreach (`$p in `$pkgs) {
+    Write-Side ("Upgrading {0} ({1}) [source={2}]" -f `$p.Name, `$p.Id, `$p.Source)
+    `$a = @('upgrade','--id',`$p.Id,'--exact','--silent','--accept-package-agreements','--accept-source-agreements','--disable-interactivity')
+    if (`$p.Source) { `$a += @('--source', `$p.Source) }
+    & `$wingetPath @a *> `$null
+    `$code = `$LASTEXITCODE
+    if (`$code -eq 0) { Write-Side ("OK: {0}" -f `$p.Id) }
+    else { Write-Side ("FAILED ({0}): {1}" -f `$code, `$p.Id) -Type 3; `$fail++ }
+}
+Write-Side ("Detached pass complete. {0} of {1} succeeded." -f (`$pkgs.Count - `$fail), `$pkgs.Count)
+"@
+
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childScript))
+    Start-Process -FilePath 'powershell.exe' `
+        -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
+        -WindowStyle Hidden | Out-Null
+
+    $names = $deferredIds -join ', '
+    Write-Log ("Handed {0} self-replacing package(s) to a detached process: {1}" -f $deferred.Count, $names) -Level INFO
+    Write-Log ("Detached upgrade log: {0}" -f $deferredLog) -Level INFO
+    Write-Host ''
+    Write-Host ("  Upgrading {0} in the background (would close this session if run here)." -f $names) -ForegroundColor Yellow
+    Write-Host ("  Watch: {0}" -f $deferredLog) -ForegroundColor DarkGray
+}
 
 exit ([int]([bool]$failed.Count))
