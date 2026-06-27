@@ -29,9 +29,14 @@ function prompt {
     $location = Get-Location
     $path = $location.Path
 
-    # Replace home directory with ~
-    if ($path.StartsWith($HOME)) {
-        $path = $path.Replace($HOME, "~")
+    # Replace the home directory with ~ — prefix only, and with a path-separator
+    # boundary so a sibling like C:\Users\Bobby isn't collapsed against
+    # C:\Users\Bob (.StartsWith + .Replace would turn it into "~by").
+    $sep = [IO.Path]::DirectorySeparatorChar
+    if ($path -eq $HOME) {
+        $path = "~"
+    } elseif ($path.StartsWith($HOME + $sep)) {
+        $path = "~" + $path.Substring($HOME.Length)
     }
 
     # Special handling for OneDrive

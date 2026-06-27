@@ -20,35 +20,35 @@ function docs {
     .SYNOPSIS
         Jump to your OneDrive Documents folder.
     #>
-    Set-Location (Join-Path $script:OneDrivePath 'Documents')
+    Set-Location -LiteralPath (Join-Path $script:OneDrivePath 'Documents')
 }
 function desktop {
     <#
     .SYNOPSIS
         Jump to your OneDrive Desktop folder.
     #>
-    Set-Location (Join-Path $script:OneDrivePath 'Desktop')
+    Set-Location -LiteralPath (Join-Path $script:OneDrivePath 'Desktop')
 }
 function downloads {
     <#
     .SYNOPSIS
         Jump to your Downloads folder.
     #>
-    Set-Location (Join-Path $env:USERPROFILE 'Downloads')
+    Set-Location -LiteralPath (Join-Path $env:USERPROFILE 'Downloads')
 }
 function onedrive {
     <#
     .SYNOPSIS
         Jump to your OneDrive root.
     #>
-    Set-Location $script:OneDrivePath
+    Set-Location -LiteralPath $script:OneDrivePath
 }
 function home {
     <#
     .SYNOPSIS
         Jump to your user-profile folder.
     #>
-    Set-Location $env:USERPROFILE
+    Set-Location -LiteralPath $env:USERPROFILE
 }
 
 function mkcd {
@@ -89,7 +89,7 @@ function up {
     param([Parameter(Position = 0)][int] $Levels = 1)
     if ($Levels -lt 1) { $Levels = 1 }
     $target = (@('..') * $Levels) -join [IO.Path]::DirectorySeparatorChar
-    Set-Location $target
+    Set-Location -LiteralPath $target
 }
 
 function .. {

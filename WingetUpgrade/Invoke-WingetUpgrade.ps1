@@ -16,6 +16,13 @@
     Pass --include-unknown to winget so packages with unknown installed versions
     are listed (off by default — they often can't be safely upgraded).
 
+.PARAMETER InstallWinGetModule
+    Install the Microsoft.WinGet.Client module (CurrentUser scope) before listing,
+    then list through it. The module reads upgrades from WinGet's API instead of
+    parsing console text, so listing is robust and works in any display language.
+    Without this switch, an interactive run offers to install the module when it's
+    absent; -All / non-interactive runs just print a one-line suggestion.
+
 .PARAMETER LogDirectory
     Override the log directory. Defaults to C:\ProgramData\WingetUpgrade\Logs.
 
@@ -32,6 +39,7 @@
 param(
     [switch] $All,
     [switch] $IncludeUnknown,
+    [switch] $InstallWinGetModule,
     [string] $LogDirectory
 )
 
@@ -59,8 +67,11 @@ function Format-CMTraceLine {
     $now    = Get-Date
     $offset = [int][System.TimeZoneInfo]::Local.GetUtcOffset($now).TotalMinutes
     $sign   = if ($offset -ge 0) { '+' } else { '' }
+    # InvariantCulture so the CMTrace time field is always colon-delimited
+    # (HH:mm:ss.fff) regardless of region — the current culture's time separator
+    # varies (e.g. '.' on Finnish), which would otherwise emit an unparseable stamp.
     '<![LOG[{0}]LOG]!><time="{1}{2}{3}" date="{4}" component="{5}" context="" type="{6}" thread="{7}" file="">' -f `
-        $Message, $now.ToString('HH:mm:ss.fff'), $sign, $offset, $now.ToString('MM-dd-yyyy'), $Component, $Type, $PID
+        $Message, $now.ToString('HH:mm:ss.fff', [cultureinfo]::InvariantCulture), $sign, $offset, $now.ToString('MM-dd-yyyy', [cultureinfo]::InvariantCulture), $Component, $Type, $PID
 }
 
 function Write-Log {
@@ -107,7 +118,89 @@ if (-not $isAdmin) {
 }
 
 # ---------- Get upgrade list ----------
+# Prefer the Microsoft.WinGet.Client module when it's installed: it returns
+# structured objects from WinGet's COM API, so the listing is locale-proof. The
+# text path below scrapes `winget upgrade`, whose column header is localized to
+# the Windows display language — on a non-English box the header match fails and
+# the script silently reports "nothing to upgrade." The module path covers the
+# default run; -IncludeUnknown still routes through the CLI text path, which maps
+# winget's --include-unknown flag precisely (the module has no clean equivalent).
 function Get-WingetUpgrades {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns a collection of available upgrades; plural reads naturally for this internal helper.')]
+    param([switch] $IncludeUnknown)
+
+    # Single source-of-truth for the module check (Get-Module -ListAvailable scans
+    # the module path, so don't run it twice) and log which path we took, so a run
+    # on a localized box can be confirmed to be using the locale-proof module path.
+    $moduleAvailable = [bool](Get-Module -ListAvailable -Name Microsoft.WinGet.Client)
+    if (-not $IncludeUnknown -and $moduleAvailable) {
+        try {
+            $list = Get-WingetUpgradeObject
+            $script:ListingChannel = 'WinGet module'
+            Write-Log 'Listing source: Microsoft.WinGet.Client module (structured, locale-independent).'
+            return $list
+        }
+        catch {
+            # Keep only the first line so the WARN stays one CMTrace record. Split
+            # on a regex (CRLF or bare LF) — .Split([Environment]::NewLine) binds
+            # to the string-separator overload and silently leaves an LF-delimited
+            # message untrimmed.
+            $firstLine = ($_.Exception.Message -split '\r?\n', 2)[0]
+            Write-Log ("WinGet module listing failed ({0}); falling back to console parsing." -f $firstLine) -Level WARN
+        }
+    }
+    $why = if ($IncludeUnknown)      { '-IncludeUnknown requires the CLI flag' }
+           elseif ($moduleAvailable) { 'module listing failed' }
+           else                      { 'Microsoft.WinGet.Client not installed' }
+    $script:ListingChannel = 'winget CLI'
+    Write-Log "Listing source: winget console output ($why)."
+    return Get-WingetUpgradeText -IncludeUnknown:$IncludeUnknown
+}
+
+# Structured listing via Microsoft.WinGet.Client (COM-backed, no console-text
+# parsing — immune to the localized-header problem). Mapped to the same shape
+# Get-WingetUpgradeText returns so the rest of the script never knows which path
+# produced the list.
+function Get-WingetUpgradeObject {
+    Import-Module Microsoft.WinGet.Client -ErrorAction Stop
+
+    # `winget upgrade` (the text path) hides Pinning/Blocking-pinned packages by
+    # default; Get-WinGetPackage exposes no pin state, so to keep the two paths
+    # consistent we drop pinned IDs when the module offers a pin query. Current
+    # module builds ship no Get-WinGetPin, making this a fail-safe no-op there (a
+    # pinned-but-upgradable package may then appear; selecting a Blocking-pinned one
+    # just fails its per-package upgrade, which winget refuses without --force). We
+    # deliberately do NOT parse `winget pin list` console text — that would
+    # reintroduce the localized-output fragility this module path exists to avoid.
+    $pinnedIds = @()
+    if (Get-Command Get-WinGetPin -ErrorAction Ignore) {
+        try {
+            $pinnedIds = @(Get-WinGetPin -ErrorAction Stop |
+                ForEach-Object { if ($_.Id) { $_.Id } elseif ($_.PackageIdentifier) { $_.PackageIdentifier } })
+        } catch {
+            Write-Verbose "Get-WinGetPin failed; not filtering pinned packages: $($_.Exception.Message)"
+        }
+    }
+
+    $pkgs = New-Object System.Collections.Generic.List[object]
+    foreach ($p in (Get-WinGetPackage -ErrorAction Stop |
+                    Where-Object { $_.IsUpdateAvailable -and $_.Id -notin $pinnedIds })) {
+        $pkgs.Add([pscustomobject]@{
+            Name      = $p.Name
+            Id        = $p.Id
+            Version   = $p.InstalledVersion
+            Available = @($p.AvailableVersions)[0]   # newest first; blank-safe if absent
+            Source    = $p.Source
+        })
+    }
+    return $pkgs
+}
+
+# Fallback listing: parse `winget upgrade` console output. Used when the module
+# isn't installed, when -IncludeUnknown is requested, or if the module path
+# throws. Locale-fragile by nature (see the note above), which is exactly why the
+# module path is preferred when available.
+function Get-WingetUpgradeText {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns a collection of available upgrades; plural reads naturally for this internal helper.')]
     param([switch] $IncludeUnknown)
 
@@ -189,10 +282,60 @@ function Get-WingetUpgrades {
     return $pkgs
 }
 
-Write-Log 'Querying winget for available upgrades...'
+# Bring in the Microsoft.WinGet.Client module when it would help and isn't already
+# present. The module makes listing locale-proof (see Get-WingetUpgrades). Params
+# are passed in (not read from script scope) so the decision is explicit and the
+# function is unit-testable without touching the console or the real module.
+#   -Install     : install without asking (the -InstallWinGetModule switch)
+#   -Unattended  : -All or redirected stdin — suggest in the log, never prompt
+#   -SkipModule  : -IncludeUnknown — the CLI text path is required, module won't help
+function Initialize-WinGetModule {
+    param([switch] $Install, [switch] $Unattended, [switch] $SkipModule)
+
+    if ($SkipModule) { return }
+    if (Get-Module -ListAvailable -Name Microsoft.WinGet.Client) { return }
+
+    $doInstall = $false
+    if ($Install) {
+        $doInstall = $true
+    }
+    elseif (-not $Unattended) {
+        Write-Host ''
+        Write-Host '  The Microsoft.WinGet.Client module is not installed.' -ForegroundColor Yellow
+        Write-Host '  It lets winup read upgrades from WinGet''s API instead of scraping console' -ForegroundColor DarkGray
+        Write-Host '  text — more robust, and independent of your Windows display language.' -ForegroundColor DarkGray
+        Write-Host '  Install it now? (CurrentUser scope, no admin needed) [y/N] ' -ForegroundColor Yellow -NoNewline
+        $doInstall = ((Read-Host) -match '^(y|yes)$')
+    }
+    else {
+        Write-Log 'Tip: Install-Module Microsoft.WinGet.Client gives winup locale-independent listing (or run: winup -InstallWinGetModule).'
+        return
+    }
+
+    if (-not $doInstall) {
+        Write-Log 'Microsoft.WinGet.Client install declined; using console-text listing.'
+        return
+    }
+
+    try {
+        Write-Host '  Installing Microsoft.WinGet.Client (CurrentUser)...' -ForegroundColor Cyan
+        Install-Module -Name Microsoft.WinGet.Client -Scope CurrentUser -Repository PSGallery -Force -ErrorAction Stop
+        Write-Log 'Installed Microsoft.WinGet.Client.' -Level OK
+    }
+    catch {
+        $firstLine = ($_.Exception.Message -split '\r?\n', 2)[0]
+        Write-Log ("Could not install Microsoft.WinGet.Client ({0}); using console-text listing." -f $firstLine) -Level WARN
+    }
+}
+
+Initialize-WinGetModule -Install:$InstallWinGetModule `
+    -Unattended:($All -or [Console]::IsInputRedirected) `
+    -SkipModule:$IncludeUnknown
+
+Write-Log 'Querying winget for available upgrades (this can take several seconds)...'
 $packages = Get-WingetUpgrades -IncludeUnknown:$IncludeUnknown
 if (-not $packages -or $packages.Count -eq 0) {
-    Write-Log 'Nothing to upgrade. You are up to date.' -Level OK
+    Write-Log "Nothing to upgrade — you are up to date (checked via $script:ListingChannel)." -Level OK
     exit 0
 }
 Write-Log ("Found {0} package(s) with available upgrades." -f $packages.Count) -Level OK
@@ -318,7 +461,7 @@ function Select-Packages {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Operates on and returns a collection of packages; plural reads naturally for this internal helper.')]
     param([object[]] $Packages)
     if ($script:All) { return $Packages }
-    return Show-InteractiveSelector -Items $Packages -Title 'Select packages to upgrade'
+    return Show-InteractiveSelector -Items $Packages -Title "Select packages to upgrade  ·  source: $script:ListingChannel"
 }
 
 $chosen = @(Select-Packages -Packages $packages)
@@ -346,6 +489,7 @@ $deferredIds = @($deferred.Id)
 # ---------- Confirm ----------
 Write-Host ''
 Write-Host '  About to upgrade:' -ForegroundColor Cyan
+Write-Host ("  (upgrade list obtained via {0})" -f $script:ListingChannel) -ForegroundColor DarkGray
 foreach ($p in $chosen) {
     $isDeferred = $deferredIds -contains $p.Id
     $tail = if ($isDeferred) { '   (deferred — runs in a separate process)' } else { '' }
@@ -431,8 +575,16 @@ if ($results.Count -gt 0) {
 
 $failed = @($results | Where-Object { $_.Status -ne 'Success' })
 if ($results.Count -gt 0) {
-    $finalLevel = if ($failed.Count -gt 0) { 'ERROR' } else { 'OK' }
-    Write-Log ("Done. {0} succeeded, {1} failed. Log: {2}" -f ($results.Count - $failed.Count), $failed.Count, $logFile) -Level $finalLevel
+    $succeeded = $results.Count - $failed.Count
+    if ($failed.Count -gt 0) {
+        Write-Log ("Done. {0} succeeded, {1} failed. Log: {2}" -f $succeeded, $failed.Count, $logFile) -Level ERROR
+    } else {
+        # Word the all-succeeded summary without "failed"/"error"/etc. CMTrace red-
+        # highlights any line containing those keywords regardless of the entry's
+        # type, so a literal "0 failed" paints a clean (type=1) run as a red error
+        # line. "N of N succeeded" carries the same information, no trigger words.
+        Write-Log ("Done. {0} of {1} succeeded. Log: {2}" -f $succeeded, $results.Count, $logFile) -Level OK
+    }
 }
 
 # ---------- Deferred self-replacing upgrades (detached, after we're done) ----------
@@ -464,7 +616,7 @@ function Format-CMTraceLine {
     `$now    = Get-Date
     `$offset = [int][System.TimeZoneInfo]::Local.GetUtcOffset(`$now).TotalMinutes
     `$sign   = if (`$offset -ge 0) { '+' } else { '' }
-    '<![LOG[{0}]LOG]!><time="{1}{2}{3}" date="{4}" component="{5}" context="" type="{6}" thread="{7}" file="">' -f `$Message, `$now.ToString('HH:mm:ss.fff'), `$sign, `$offset, `$now.ToString('MM-dd-yyyy'), `$Component, `$Type, `$PID
+    '<![LOG[{0}]LOG]!><time="{1}{2}{3}" date="{4}" component="{5}" context="" type="{6}" thread="{7}" file="">' -f `$Message, `$now.ToString('HH:mm:ss.fff', [cultureinfo]::InvariantCulture), `$sign, `$offset, `$now.ToString('MM-dd-yyyy', [cultureinfo]::InvariantCulture), `$Component, `$Type, `$PID
 }
 function Write-Side {
     param([string]`$Message, [int]`$Type = 1)

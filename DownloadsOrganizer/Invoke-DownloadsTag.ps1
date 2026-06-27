@@ -131,7 +131,7 @@ function Get-AnthropicKey {
             if ($key) { return $key }
         }
         catch {
-            Write-Host "  SecretStore unavailable ($($_.Exception.Message.Split([Environment]::NewLine)[0]))" -ForegroundColor Yellow
+            Write-Host "  SecretStore unavailable ($(($_.Exception.Message -split '\r?\n', 2)[0]))" -ForegroundColor Yellow
             Write-Host "  Falling back to `$env:ANTHROPIC_API_KEY / prompt" -ForegroundColor Yellow
         }
     }

@@ -248,8 +248,9 @@ function Invoke-WingetUpgradeMenu {
         Runs the WingetUpgrade script: lists packages with an available upgrade,
         lets you pick which to install, then upgrades only those. Passes any extra
         arguments straight through to the script (e.g. -All, -IncludeUnknown,
-        -LogDirectory). With -Elevated, re-runs the script elevated via a real sudo
-        so winget doesn't prompt for elevation per package — see the note below.
+        -InstallWinGetModule, -LogDirectory). With -Elevated, re-runs the script
+        elevated via a real sudo so winget doesn't prompt for elevation per package
+        — see the note below.
     .PARAMETER Elevated
         Run elevated. Re-launches the script through gsudo / Windows' built-in sudo
         if available (one UAC prompt up front, in the current window when sudo is in

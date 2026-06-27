@@ -343,6 +343,10 @@ function Get-DirDescriptions {
             [pscustomobject]@{
                 Size        = $file.Length
                 Modified    = $file.LastWriteTime.ToString('yy-MM-dd HH:mm')
+                # Real timestamp kept for sorting; -Newest sorts on this, not the
+                # 'yy-MM-dd HH:mm' display string (which only happens to sort
+                # chronologically this century and would break on a format change).
+                SortTime    = $file.LastWriteTime
                 Name        = $file.Name
                 Extension   = $file.Extension.ToLowerInvariant()
                 Bucket      = $subBucket
@@ -359,13 +363,13 @@ function Get-DirDescriptions {
     # Sort precedence: GroupByBucket (bucket) > Newest (date desc) > Name asc.
     # Both can combine — `-GroupByBucket -Newest` groups by bucket, newest first within each.
     if ($GroupByBucket -and $Newest) {
-        $rows = @($rows | Sort-Object @{ Expression = { $_.Bucket ?? 'zzzz' } }, @{ Expression = 'Modified'; Descending = $true })
+        $rows = @($rows | Sort-Object @{ Expression = { $_.Bucket ?? 'zzzz' } }, @{ Expression = 'SortTime'; Descending = $true })
     }
     elseif ($GroupByBucket) {
         $rows = @($rows | Sort-Object @{ Expression = { $_.Bucket ?? 'zzzz' } }, Name)
     }
     elseif ($Newest) {
-        $rows = @($rows | Sort-Object @{ Expression = 'Modified'; Descending = $true })
+        $rows = @($rows | Sort-Object @{ Expression = 'SortTime'; Descending = $true })
     }
 
     if ($BBS) {
