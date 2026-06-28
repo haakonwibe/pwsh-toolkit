@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-28
+
 ### Added
 
 - The M365 module gate is now discoverable: `toolkit` lists the Microsoft 365 group as "Not loaded" with the reason (Microsoft.Graph not installed, or `Features.DisableM365`) instead of omitting it, and the loader logs the reason under `-Verbose`.
