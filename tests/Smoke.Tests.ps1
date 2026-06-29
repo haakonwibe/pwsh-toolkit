@@ -40,6 +40,7 @@ BeforeAll {
     'Get-TerminalFont','Set-TerminalFont',
     'Get-OrCreateSecret','Get-StoredSecrets','Remove-StoredSecret',
     'rdp','rps',
+    'task',
     'wtf',
     'note','today','Find-Note','Set-NotesRoot',
     'ask','ll','la','lh','touch','which'

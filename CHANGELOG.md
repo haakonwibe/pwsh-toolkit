@@ -9,6 +9,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `task` — run or manage a Windows scheduled task. With no argument it opens a picker over your tasks (everything outside `\Microsoft\*`; `-All` includes Windows' own), then a detail screen showing the task's state and decoded last-run result with single-key run / stop / toggle-enabled actions. `task <name>` fuzzy-matches a task and runs it directly (falling back to an exact task name across all paths), and `-Stop` / `-Enable` / `-Disable` / `-Info` act without running. Built on the in-box ScheduledTasks module and the shared `Show-Picker`; tasks registered under a protected principal that need elevation get an actionable `sudo …-ScheduledTask` hint.
+
 ### Fixed
 
 - `winup` no longer reports a false "nothing to upgrade — you are up to date" on a Windows whose display language winget actually localizes (de/es/fr/it/ja/ko/pt-BR/ru/zh). winget translates its `upgrade` table header into those languages, and the console-text fallback parser — used when the `Microsoft.WinGet.Client` module isn't installed — can only read winget's English header, so it found nothing and the empty result was reported as success. winup now distinguishes a parse failure from a genuinely empty list: on a winget-localized display language it warns that it couldn't read the upgrade list, points at `winup -InstallWinGetModule`, and exits non-zero, instead of claiming you're up to date. Languages winget doesn't translate (e.g. Norwegian, Danish, Dutch) get English winget output, so the text path stays reliable there and the message is unchanged.

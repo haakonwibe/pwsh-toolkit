@@ -22,6 +22,7 @@ $script:ToolkitGroups = [ordered]@{
     'Terminal'            = 'Windows Terminal'
     'SecretManagement'    = 'Secrets'
     'RemoteServers'       = 'Remote servers'
+    'ScheduledTasks'      = 'Scheduled tasks'
     'Notes'               = 'Notes / journal'
     'Wtf'                 = 'Explain errors'
     'Get-DirDescriptions' = 'Downloads viewer'
@@ -42,6 +43,8 @@ $script:ToolkitInternalCommands = @(
     'Resolve-RemoteServer', 'Format-RemoteServerDisplay', 'Format-PsRemotingError'
     'Get-ObsidianVault', 'Resolve-NotesRoot'
     'Test-SecretStoreInteractive'
+    'Test-ScheduledTaskAvailable', 'Test-ToolkitTaskVisible', 'Format-TaskResult'
+    'Get-ToolkitScheduledTask', 'Resolve-ScheduledTask', 'Invoke-ScheduledTaskAction', 'Show-ScheduledTaskDetail'
     'prompt'   # the prompt function itself, not a command you invoke
 )
 # `function script:Foo` is the author explicitly marking Foo private — those are

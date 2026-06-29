@@ -41,6 +41,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Terminal.ps1')        # Update-FontFaceText
     . (Join-Path $commonDir 'Catalog.ps1')         # Get-ToolkitCommand
     . (Join-Path $commonDir 'Json.ps1')            # Show-Json + Format-JsonColor
+    . (Join-Path $commonDir 'ScheduledTasks.ps1')  # Format-TaskResult, Test-ToolkitTaskVisible
 }
 
 Describe 'touch' {
@@ -654,5 +655,32 @@ Describe 'Find-GitProject' {
         Set-Content -LiteralPath (Join-Path $extra 'HEAD') -Value 'ref: refs/heads/main'
         @(Find-GitProject).Count        | Should -Be $first
         @(Find-GitProject -Refresh).Count | Should -Be ($first + 1)
+    }
+}
+
+Describe 'Format-TaskResult (LastTaskResult decoding)' {
+    It 'maps success to a clean word' {
+        Format-TaskResult 0 | Should -Be 'Success'
+    }
+    It 'decodes the 0x4130x status family' {
+        Format-TaskResult 267009 | Should -Be 'Currently running'   # 0x41301
+        Format-TaskResult 267011 | Should -Be 'Has not yet run'     # 0x41303
+    }
+    It 'shows an unknown code as unsigned 32-bit hex (negative Int32 normalized)' {
+        # 0x80070002 comes back from Get-ScheduledTaskInfo as the Int32 -2147024894.
+        Format-TaskResult -2147024894 | Should -Be 'Exit code 0x80070002'
+    }
+}
+
+Describe 'Test-ToolkitTaskVisible (default scope excludes \Microsoft)' {
+    It 'shows root-level and custom-folder tasks' {
+        Test-ToolkitTaskVisible -TaskPath '\'         | Should -BeTrue
+        Test-ToolkitTaskVisible -TaskPath '\MyJobs\'  | Should -BeTrue
+    }
+    It "hides Windows' own \Microsoft\* tasks by default" {
+        Test-ToolkitTaskVisible -TaskPath '\Microsoft\Windows\Defrag\' | Should -BeFalse
+    }
+    It '-IncludeAll shows everything, including \Microsoft\*' {
+        Test-ToolkitTaskVisible -TaskPath '\Microsoft\Windows\Defrag\' -IncludeAll | Should -BeTrue
     }
 }

@@ -26,6 +26,7 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'Get-StoredSecrets  —  list every secret you have stashed in SecretStore';                   E = 'Try: Get-StoredSecrets' }
     [pscustomobject]@{ H = 'rdp  —  Remote Desktop picker driven by config.psd1''s RemoteServers list';                 E = 'Try: rdp   (also: rdp dc, rdp build — fuzzy match)' }
     [pscustomobject]@{ H = 'rps  —  PowerShell Remoting picker (Enter-PSSession) — same data as rdp';                   E = 'Try: rps   (User on the server entry pre-fills Get-Credential)' }
+    [pscustomobject]@{ H = 'task  —  run or manage a scheduled task (picker, or task <name>)';                         E = 'Try: task   (also: task PSModuleMaintenance, task <name> -Info / -Stop)' }
     [pscustomobject]@{ H = 'Connect-Tenant  —  Microsoft Graph login, read-only scopes preset';                          E = 'Try: Connect-Tenant   (then: Get-TenantOverview; -Access Write to modify)' }
     [pscustomobject]@{ H = 'Connect-Exchange  —  Exchange Online login';                                                E = 'Try: Connect-Exchange' }
     [pscustomobject]@{ H = 'Get-TenantOverview  —  comprehensive tenant statistics in one shot';                        E = 'Try: Get-TenantOverview   (after Connect-Tenant)' }
