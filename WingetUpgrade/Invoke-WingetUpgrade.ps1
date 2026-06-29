@@ -228,6 +228,11 @@ function Get-WingetUpgradeText {
         }
     }
     if ($headerIdx -lt 0) {
+        # Couldn't locate the (English) header. On an English system this just means
+        # nothing is pending; on a language winget localizes its output into, it
+        # means we failed to parse a list that may well be non-empty. Flag it so the
+        # caller doesn't report a false "up to date" — see Test-WingetLocalizedCulture.
+        $script:ListingParseFailed = $true
         Write-Log 'No upgradable packages detected (no header line found).' -Level INFO
         return @()
     }
@@ -282,6 +287,21 @@ function Get-WingetUpgradeText {
     return $pkgs
 }
 
+# True when the current (or given) UI culture is one winget actually ships a
+# translation for. winget localizes its console output — including the upgrade-table
+# header the text path keys off — for exactly these languages (folders under
+# microsoft/winget-cli Localization/Resources): de, es, fr, it, ja, ko, ru, zh
+# (both zh-CN and zh-TW), and pt-BR (Brazil only, NOT pt-PT). On any of them the
+# English-only text parser can't read the header, so an empty text-path result there
+# means "couldn't parse", not "up to date". en-* and untranslated languages
+# (Norwegian, Danish, Dutch, Polish, ...) get English winget output, so the text
+# path is reliable and this returns $false.
+function Test-WingetLocalizedCulture {
+    param([string] $Culture = (Get-UICulture).Name)
+    if ($Culture -eq 'pt-BR') { return $true }                       # pt-BR only; pt-PT falls through
+    return (($Culture -split '-')[0] -in @('de','es','fr','it','ja','ko','ru','zh'))
+}
+
 # Bring in the Microsoft.WinGet.Client module when it would help and isn't already
 # present. The module makes listing locale-proof (see Get-WingetUpgrades). Params
 # are passed in (not read from script scope) so the decision is explicit and the
@@ -332,9 +352,25 @@ Initialize-WinGetModule -Install:$InstallWinGetModule `
     -Unattended:($All -or [Console]::IsInputRedirected) `
     -SkipModule:$IncludeUnknown
 
+$script:ListingParseFailed = $false
 Write-Log 'Querying winget for available upgrades (this can take several seconds)...'
 $packages = Get-WingetUpgrades -IncludeUnknown:$IncludeUnknown
 if (-not $packages -or $packages.Count -eq 0) {
+    # Distinguish "genuinely up to date" from "couldn't read winget's output." When
+    # the text path failed to find the header AND we're on a display language winget
+    # localizes, an empty result almost certainly means we couldn't parse the list —
+    # not that nothing is pending. Don't hand back a clean bill of health we can't
+    # vouch for; point at the locale-proof module instead. (A localized box with
+    # genuinely nothing pending also lands here — hence the honest "couldn't tell"
+    # wording rather than a false "up to date.")
+    if ($script:ListingParseFailed -and (Test-WingetLocalizedCulture)) {
+        $uiName = (Get-UICulture).Name
+        Write-Log ("Could not read winget's upgrade list. Your display language ($uiName) is one winget localizes its output into, and winup's text parser only reads winget's English header — so it cannot tell whether upgrades are pending. Install the locale-independent module: winup -InstallWinGetModule") -Level WARN
+        Write-Host ''
+        Write-Host "  Couldn't reliably read upgrades on a localized Windows ($uiName)." -ForegroundColor Yellow
+        Write-Host '  Fix: winup -InstallWinGetModule   (one-time, CurrentUser, no admin)' -ForegroundColor Yellow
+        exit 1
+    }
     Write-Log "Nothing to upgrade — you are up to date (checked via $script:ListingChannel)." -Level OK
     exit 0
 }

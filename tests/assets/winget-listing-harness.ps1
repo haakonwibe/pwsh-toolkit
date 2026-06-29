@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'WingetUpgrade/Invoke-WingetUpgrade.ps1'
 $ast  = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$null, [ref]$null)
-$want = 'Get-WingetUpgrades', 'Get-WingetUpgradeObject', 'Initialize-WinGetModule'
+$want = 'Get-WingetUpgrades', 'Get-WingetUpgradeObject', 'Initialize-WinGetModule', 'Test-WingetLocalizedCulture'
 $defs = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $want -contains $n.Name }, $true)
 foreach ($d in $defs) { . ([scriptblock]::Create($d.Extent.Text)) }
 
@@ -126,6 +126,20 @@ Check "interactive 'y': installs" ($script:installCalled)
 $script:moduleInstalled = $false; $script:installCalled = $false; $script:readHostResponse = 'n'; $script:logged.Clear()
 Initialize-WinGetModule
 Check "interactive 'n': declines, no install" ((-not $script:installCalled) -and [bool]($script:logged -match 'declined'))
+
+# ==== Test-WingetLocalizedCulture (winget's translated-language set) ========
+# winget ships translations for de/es/fr/it/ja/ko/ru/zh(+zh-TW) and pt-BR only.
+# On those the localized header defeats the text parser; everywhere else winget
+# speaks English, so an empty text result genuinely means "up to date".
+Write-Host "`nF) Test-WingetLocalizedCulture" -ForegroundColor Cyan
+Check 'fr-FR localized'           (Test-WingetLocalizedCulture -Culture 'fr-FR')
+Check 'de-AT localized (prefix)'  (Test-WingetLocalizedCulture -Culture 'de-AT')
+Check 'zh-CN localized'           (Test-WingetLocalizedCulture -Culture 'zh-CN')
+Check 'zh-TW localized'           (Test-WingetLocalizedCulture -Culture 'zh-TW')
+Check 'pt-BR localized'           (Test-WingetLocalizedCulture -Culture 'pt-BR')
+Check 'en-US not localized'       (-not (Test-WingetLocalizedCulture -Culture 'en-US'))
+Check 'nb-NO not localized'       (-not (Test-WingetLocalizedCulture -Culture 'nb-NO'))
+Check 'pt-PT not localized'       (-not (Test-WingetLocalizedCulture -Culture 'pt-PT'))
 
 Write-Host "`n==== $($script:pass) passed, $($script:fail) failed ====" -ForegroundColor $(if ($script:fail) { 'Red' } else { 'Green' })
 exit $script:fail
