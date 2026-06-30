@@ -11,6 +11,7 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'winup  —  interactive winget upgrade picker with CMTrace-friendly logging';                 E = 'Try: winup   (also: winup -All to skip the picker)' }
     [pscustomobject]@{ H = 'winup -Elevated  —  upgrade with a single UAC prompt up front, not one per package';        E = 'Try: winup -Elevated   (runs via Windows sudo / gsudo when enabled; new window otherwise)' }
     [pscustomobject]@{ H = 'tagdl  —  AI-tagged Downloads with BBS-style file descriptions';                            E = 'Try: tagdl -Limit 5   (then browse with dird or fr)' }
+    [pscustomobject]@{ H = 'sortdl  —  file tagged Downloads into per-bucket subfolders (preview + undo)';             E = 'Try: sortdl -WhatIf   (then sortdl to file them; sortdl -Undo to reverse)' }
     [pscustomobject]@{ H = 'dird / fr  —  directory listing with AI descriptions and color coding';                     E = 'Try: fr ~\Downloads   (also: dird -GroupByBucket, dird -Bucket Installers)' }
     [pscustomobject]@{ H = 'json  —  pretty-print and syntax-highlight JSON (a file, a pipe, or an object)';            E = 'Try: json package.json   (also: gh api ... | json, Get-Process | json, json file -Raw)' }
     [pscustomobject]@{ H = 'Get-PubIP  —  public IPv4 and IPv6 with multiple fallback services';                        E = 'Try: Get-PubIP' }

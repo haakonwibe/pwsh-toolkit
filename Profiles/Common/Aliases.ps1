@@ -237,6 +237,7 @@ function which {
 # function body is evaluated interactively).
 $script:WingetUpgradeScript   = Join-Path $script:Config.ToolkitRoot 'WingetUpgrade\Invoke-WingetUpgrade.ps1'
 $script:DownloadsTagScript    = Join-Path $script:Config.ToolkitRoot 'DownloadsOrganizer\Invoke-DownloadsTag.ps1'
+$script:DownloadsSortScript   = Join-Path $script:Config.ToolkitRoot 'DownloadsOrganizer\Invoke-DownloadsSort.ps1'
 $script:DirDescriptionsScript = Join-Path $script:Config.ToolkitRoot 'DownloadsOrganizer\Get-DirDescriptions.ps1'
 
 # Interactive winget upgrade picker (see WingetUpgrade/Invoke-WingetUpgrade.ps1)
@@ -303,6 +304,16 @@ function Invoke-DownloadsTagger {
     & $script:DownloadsTagScript @args
 }
 Set-Alias tagdl Invoke-DownloadsTagger
+
+# Sort tagged Downloads into per-bucket subfolders (see DownloadsOrganizer/)
+function Invoke-DownloadsSorter {
+    <#
+    .SYNOPSIS
+        Sort tagged Downloads into per-bucket subfolders, with preview and undo (alias: sortdl).
+    #>
+    & $script:DownloadsSortScript @args
+}
+Set-Alias sortdl Invoke-DownloadsSorter
 
 # Load `dird` (dir-with-descriptions viewer). Skip silently if the toolkit
 # layout doesn't include DownloadsOrganizer/ — the wrapper functions above

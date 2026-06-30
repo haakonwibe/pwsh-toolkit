@@ -143,8 +143,9 @@ OneDrive paths use `$Config.OneDriveOrg` (auto-detected from `$env:OneDriveComme
 - Upgrading PowerShell itself can't happen in-process (Restart Manager would close the running session), so it's deferred to a detached process and the rest of the batch completes first; its result lands in a `…-deferred.log` side file
 - CMTrace-XML logs land in `C:\ProgramData\WingetUpgrade\Logs\`. Implementation in `WingetUpgrade/Invoke-WingetUpgrade.ps1`
 
-**Downloads (AI tagging + viewing):**
+**Downloads (AI tagging, sorting + viewing):**
 - `tagdl [-Limit N]` - Tag files in Downloads with FILE_ID.DIZ-style AI descriptions, stored as NTFS alternate data streams plus a CSV index. Uses the `Anthropic-API-Key` SecretStore secret (env `ANTHROPIC_API_KEY` fallback). Implementation in `DownloadsOrganizer/`
+- `sortdl` - File the tagged downloads at the Downloads root into `~\Downloads\<Bucket>\` subfolders (reads `tagdl`'s CSV index; nothing ever leaves Downloads). Previews the move plan and asks before moving; `sortdl -WhatIf` previews only, `-Yes` skips the prompt, `sortdl -Undo` reverses the last sort. `Other` and untagged files stay at the root. Implementation in `DownloadsOrganizer/`
 - `dird [path]` - Directory listing showing those AI descriptions, color-coded by extension and bucket (alphabetical). `dird -GroupByBucket`, `dird -Bucket Installers`
 - `fr [path]` - Same as `dird`, newest-first (BBS-style "filelisting reverse")
 
