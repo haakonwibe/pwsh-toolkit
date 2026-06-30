@@ -62,7 +62,16 @@ reusable; main new work is the multi-folder scan + sort + picker.
 
 ---
 
-## 3. AI commit message (`gcm` / `git ai-commit`)
+## 3. AI commit message (`gcm` / `git ai-commit`) — ❌ Shelved 2026-06-30
+
+Shelved after reconsidering the value. `gcm` only ever sees `git diff --staged`
+— the *what* — but a good commit message is mostly the *why*, which isn't in the
+diff, so the tool is structurally stuck paraphrasing the change back to you (the
+"bland" risk already noted below). And commits made through an AI agent like Claude
+Code already get a message written with full session context — what the change was
+*for* — which is strictly more than a diff-only helper can know. The niche it was
+meant to fill is mostly already filled, and filled better. Kept below for the
+design record.
 
 **What:** Pipes `git diff --staged` to Claude Haiku, drops you into the standard
 `git commit` editor with the generated message pre-filled. Reuses the existing
