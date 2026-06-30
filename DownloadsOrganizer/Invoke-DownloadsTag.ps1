@@ -551,7 +551,12 @@ Save-Cache -Cache $cache
 # the CSV is the fallback for files that lost their ADS (e.g. copied off-volume).
 if ($results.Count -gt 0 -and -not $WhatIfPreference) {
     $indexPath = Join-Path $Path '_downloads-index.csv'
-    $rows = @($results)
+    # Use the List's own ToArray() rather than @($results): the @() array
+    # subexpression over a generic List[object] intermittently throws
+    # "Argument types do not match" on PowerShell 7.6.x (a JIT-tiering engine
+    # flake), which aborted the whole index write mid-run. ToArray() copies
+    # natively and sidesteps that path.
+    $rows = $results.ToArray()
     if (Test-Path -LiteralPath $indexPath) {
         $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($r in $results) { $null = $seen.Add($r.Name) }
