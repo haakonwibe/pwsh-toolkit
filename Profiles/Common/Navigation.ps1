@@ -111,15 +111,21 @@ function ... {
 # ============================================================================
 # Folder jumper: `j`, `jb`, `jf`
 # ============================================================================
-# `j`        - picker (digits 1-9 instant, Up/Down + Enter, Esc cancel)
-# `j name`   - direct jump by partial label/path match (case-insensitive)
-# `jb`       - back to previous location (browser-style history)
-# `jf`       - forward after going back
+# `j`         - picker (digits 1-9 instant, Up/Down + Enter, Esc cancel)
+# `j name`    - direct jump by partial label/path match (case-insensitive)
+# `j -Add`    - bookmark the current dir (or `j -Add <path>`; -Label to name it)
+# `j -Remove` - drop a bookmark you added, by label
+# `jb`        - back to previous location (browser-style history)
+# `jf`        - forward after going back
 #
-# Built-in starter destinations below. Add more in config.psd1's
-# ExtraJumpFolders, or for complex/conditional setup append in
-# Machines/<COMPUTERNAME>.ps1:
-#   $script:JumpFolders += [pscustomobject]@{ Label='VMs'; Path='D:\VMs' }
+# Destinations come from three sources, appended in this order:
+#   1. Built-in starters (below).
+#   2. config.psd1's ExtraJumpFolders (literals) and, for anything needing
+#      evaluation, Machines/<COMPUTERNAME>.ps1:
+#        $script:JumpFolders += [pscustomobject]@{ Label='VMs'; Path='D:\VMs' }
+#   3. Bookmarks you add live with `j -Add` — persisted as JSON under
+#      %LOCALAPPDATA%\pwsh-toolkit and tagged Source='user', so `j -Remove` can
+#      manage them without touching the built-ins or your config.
 
 $script:JumpFolders = @(
     [pscustomobject]@{ Label = 'Home';         Path = $env:USERPROFILE }
@@ -138,6 +144,128 @@ if ($script:Config -and $script:Config.ExtraJumpFolders) {
         }
     }
 }
+
+# ============================================================================
+# User bookmarks: `j -Add` / `j -Remove`
+# ============================================================================
+# A self-service favorites list so you never have to hand-edit config.psd1 or a
+# machine file just to remember a folder. Stored as JSON (not PowerShell) so it's
+# safe to rewrite from code, under %LOCALAPPDATA% alongside the other per-machine
+# toolkit state (the PoshThemes cache) rather than in the repo tree.
+$script:JumpBookmarkFile = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit\jump-bookmarks.json'
+
+function Get-JumpBookmark {
+    # Read the saved bookmarks. A missing, empty, or corrupt file yields an empty
+    # list and never throws — a bad file must not break profile load or `j`.
+    if (-not (Test-Path -LiteralPath $script:JumpBookmarkFile)) { return @() }
+    try {
+        $raw = Get-Content -Raw -LiteralPath $script:JumpBookmarkFile -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
+        $data = $raw | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Write-Warning "pwsh-toolkit: couldn't read jump bookmarks ($script:JumpBookmarkFile): $($_.Exception.Message)"
+        return @()
+    }
+    @($data) |
+        Where-Object { $_ -and $_.Label -and $_.Path } |
+        ForEach-Object { [pscustomobject]@{ Label = [string]$_.Label; Path = [string]$_.Path } }
+}
+
+function Save-JumpBookmark {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Bookmark)
+
+    $dir = Split-Path -Parent $script:JumpBookmarkFile
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    # Normalize to plain Label/Path objects, then serialize as a JSON array.
+    # -AsArray (piped, so it enumerates) keeps a single bookmark as a one-element
+    # array; the empty case is written literally, because piping nothing to
+    # ConvertTo-Json emits nothing and would leave the old file untouched (which
+    # would silently resurrect the last bookmark you just removed).
+    $clean = @($Bookmark | ForEach-Object { [pscustomobject]@{ Label = $_.Label; Path = $_.Path } })
+    $json  = if ($clean.Count -eq 0) { '[]' } else { $clean | ConvertTo-Json -Depth 3 -AsArray }
+    Set-Content -LiteralPath $script:JumpBookmarkFile -Value $json -Encoding utf8
+}
+
+function Sync-JumpBookmark {
+    # Rebuild the user-bookmark slice of the live jump list from the store.
+    # Idempotent: it drops any existing Source='user' entries first, so calling it
+    # after every add/remove keeps the session list and the file in lock-step
+    # without disturbing built-in, config, or machine-file destinations.
+    $script:JumpFolders = @($script:JumpFolders | Where-Object { $_.Source -ne 'user' })
+    foreach ($b in Get-JumpBookmark) {
+        $script:JumpFolders += [pscustomobject]@{ Label = $b.Label; Path = $b.Path; Source = 'user' }
+    }
+}
+
+function Add-JumpBookmark {
+    param([string] $Path, [string] $Label)
+
+    # Target: an explicit directory, or the current location.
+    if ($Path) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+            Write-Host "  Not a directory: $Path" -ForegroundColor Yellow
+            return
+        }
+        $resolved = (Resolve-Path -LiteralPath $Path).Path
+    } else {
+        $loc = Get-Location
+        if ($loc.Provider.Name -ne 'FileSystem') {
+            Write-Host '  Current location is not a file-system path — pass one: j -Add <dir>' -ForegroundColor Yellow
+            return
+        }
+        $resolved = $loc.Path
+    }
+
+    # Default label: the leaf folder name (fall back to the path at a drive root).
+    if (-not $Label) {
+        $Label = Split-Path -Leaf $resolved
+        if ([string]::IsNullOrWhiteSpace($Label)) { $Label = $resolved.TrimEnd('\', '/') }
+    }
+
+    # Don't shadow a built-in/config/machine label: `j <label>` returns the first
+    # match, so a duplicate user entry would be unreachable. Ask them to rename it.
+    $clash = @($script:JumpFolders | Where-Object { $_.Source -ne 'user' -and $_.Label -ieq $Label })
+    if ($clash) {
+        Write-Host "  '$Label' already maps to $($clash[0].Path) (a built-in/config destination) — name this one differently: j -Add -Label <name>" -ForegroundColor Yellow
+        return
+    }
+
+    # Upsert by label (case-insensitive): re-adding a label repoints it.
+    $store  = @(Get-JumpBookmark | Where-Object { $_.Label -ine $Label })
+    $store += [pscustomobject]@{ Label = $Label; Path = $resolved }
+    Save-JumpBookmark -Bookmark $store
+    Sync-JumpBookmark
+    Write-Host "  Bookmarked '$Label' -> $resolved" -ForegroundColor Green
+}
+
+function Remove-JumpBookmark {
+    param([string] $Name)
+
+    if (-not $Name) {
+        Write-Host '  Which bookmark? Usage: j -Remove <label>   (list them with: j)' -ForegroundColor Yellow
+        return
+    }
+
+    $store = @(Get-JumpBookmark)
+    $hit   = @($store | Where-Object { $_.Label -ieq $Name })
+    if (-not $hit) {
+        $builtin = @($script:JumpFolders | Where-Object { $_.Source -ne 'user' -and $_.Label -ieq $Name })
+        if ($builtin) {
+            Write-Host "  '$Name' is a built-in/config destination — remove it from config.psd1 or your machine file, not here." -ForegroundColor Yellow
+        } else {
+            Write-Host "  No bookmark labeled '$Name'." -ForegroundColor Yellow
+        }
+        return
+    }
+
+    Save-JumpBookmark -Bookmark @($store | Where-Object { $_.Label -ine $Name })
+    Sync-JumpBookmark
+    Write-Host "  Removed bookmark '$($hit[0].Label)'" -ForegroundColor Green
+}
+
+# Load any saved bookmarks into this session's jump list.
+Sync-JumpBookmark
 
 # Per-session navigation history. Reset on profile reload (acceptable).
 $script:JumpBack    = New-Object 'System.Collections.Generic.Stack[string]'
@@ -192,7 +320,7 @@ function jf {
 function j {
     <#
     .SYNOPSIS
-        Jump to a bookmarked folder — interactive picker, or direct by name.
+        Jump to a bookmarked folder — picker, direct by name, or manage bookmarks.
     .DESCRIPTION
         With no argument, opens an interactive picker over the configured jump
         destinations (digits 1-9 jump instantly; Up/Down + Enter; Esc cancels),
@@ -200,8 +328,23 @@ function j {
         With an argument, jumps directly: first by case-insensitive substring
         match against bookmark labels/paths, then falling back to treating the
         argument as a literal directory path. Integrates with `jb`/`jf` history.
+
+        Use -Add to bookmark a folder and -Remove to drop one. These persist to a
+        JSON file under %LOCALAPPDATA%\pwsh-toolkit and survive restarts, so you
+        never have to hand-edit config.psd1 or a machine file for a simple favorite.
     .PARAMETER Match
         Optional substring (label or path) or a literal directory to jump to.
+    .PARAMETER Add
+        Bookmark a folder — the current directory, or the one given as -Path.
+    .PARAMETER Path
+        With -Add, the directory to bookmark. Defaults to the current location.
+    .PARAMETER Label
+        With -Add, the name shown in the picker and matched by `j <label>`.
+        Defaults to the target folder's leaf name.
+    .PARAMETER Remove
+        Remove a bookmark you added, identified by its label.
+    .PARAMETER Name
+        With -Remove, the label of the bookmark to drop.
     .EXAMPLE
         j
 
@@ -212,9 +355,43 @@ function j {
 
         Skips the picker and jumps straight to the first bookmark (or path)
         matching "down" — e.g. Downloads. A minimal unique prefix is enough.
+    .EXAMPLE
+        j -Add
+
+        Bookmarks the current directory under its folder name, so the picker and
+        `j <name>` can reach it from now on — no config editing.
+    .EXAMPLE
+        j -Add D:\VMs -Label vms
+
+        Bookmarks D:\VMs as "vms". Later just: j vms.
+    .EXAMPLE
+        j -Remove vms
+
+        Drops the "vms" bookmark.
     #>
-    [CmdletBinding()]
-    param([Parameter(Position = 0)][string] $Match)
+    [CmdletBinding(DefaultParameterSetName = 'Jump')]
+    param(
+        [Parameter(Position = 0, ParameterSetName = 'Jump')]
+        [string] $Match,
+
+        [Parameter(Mandatory, ParameterSetName = 'Add')]
+        [switch] $Add,
+
+        [Parameter(Position = 0, ParameterSetName = 'Add')]
+        [string] $Path,
+
+        [Parameter(ParameterSetName = 'Add')]
+        [string] $Label,
+
+        [Parameter(Mandatory, ParameterSetName = 'Remove')]
+        [switch] $Remove,
+
+        [Parameter(Position = 0, ParameterSetName = 'Remove')]
+        [string] $Name
+    )
+
+    if ($Add)    { Add-JumpBookmark -Path $Path -Label $Label; return }
+    if ($Remove) { Remove-JumpBookmark -Name $Name; return }
 
     $items = @($script:JumpFolders)
 

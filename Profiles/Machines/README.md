@@ -56,11 +56,19 @@ function epic { Set-Location "D:\Gaming\EpicGames" }
 
 ### Add Jump Folder Destinations
 
+> **Just want to bookmark a folder?** You probably don't need this file. Run
+> `j -Add` to bookmark the current directory (or `j -Add <path> -Label <name>`),
+> and `j -Remove <label>` to drop it. Those persist to
+> `%LOCALAPPDATA%\pwsh-toolkit\jump-bookmarks.json` and load at every shell start.
+> Use a machine file only for destinations that need PowerShell to *compute*, as
+> below.
+
 The folder jumper (`j` picker, `j name` direct jump, `jb`/`jf` history) reads
 its destinations from `$script:JumpFolders`. Simple literal paths belong in
-`config.psd1`'s `ExtraJumpFolders`, but anything that needs PowerShell to
-evaluate — environment variables, `Test-Path` checks, conditional paths —
-belongs here, because this file is dot-sourced *after* the config is applied.
+`config.psd1`'s `ExtraJumpFolders`, one-off favorites belong in `j -Add`, but
+anything that needs PowerShell to evaluate — environment variables, `Test-Path`
+checks, conditional paths — belongs here, because this file is dot-sourced
+*after* the config is applied.
 
 ```powershell
 # File: LAPTOP-WORK.ps1

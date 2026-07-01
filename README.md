@@ -59,7 +59,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 
 | Helper | What it does |
 |---|---|
-| **`j`** | Interactive folder jumper — picker with digit shortcuts (1-9 instant), arrow keys + Enter, Esc cancel. Renders on the terminal's alternate screen buffer so scrollback is preserved. `j <name>` skips the picker for a direct fuzzy jump against your configured bookmarks; if no bookmark matches, falls through to treating the argument as a literal directory path, so `j C:\Some\Path` works too. |
+| **`j`** | Interactive folder jumper — picker with digit shortcuts (1-9 instant), arrow keys + Enter, Esc cancel. Renders on the terminal's alternate screen buffer so scrollback is preserved. `j <name>` skips the picker for a direct fuzzy jump against your configured bookmarks; if no bookmark matches, falls through to treating the argument as a literal directory path, so `j C:\Some\Path` works too. `j -Add` bookmarks the current folder (or `j -Add <path> -Label <name>`) and `j -Remove <label>` drops it — a self-service favorites list persisted under `%LOCALAPPDATA%`, no config editing. |
 | **`jb` / `jf`** | Browser-style back/forward through visited folders, per session. |
 | **`prj`** | Git-repo jumper. Scans your `ProjectRoots` (config.psd1; defaults to `C:\GitHub`) for repositories and jumps into one — picker with digit shortcuts and current branch shown, or `prj <name>` for a direct fuzzy jump. List is cached per session; `prj -Refresh` rescans. Integrates with `jb`/`jf` history. |
 | **`peek <archive>`** | Extracts an archive to `$env:TEMP\peek\<name>-<timestamp>` and jumps you there. Dispatches to WinRAR for `.rar`, 7-Zip for everything else, `Expand-Archive` for `.zip` if neither is installed. `peek -List`, `peek -Active`, `peek -Clean` for the obvious variants. |
@@ -108,7 +108,7 @@ A fresh tab: rotating profile tip on top, the polished Oh My Posh prompt with `p
 
 ![j picker showing bookmark destinations](docs/screenshots/j-picker.png)
 
-Press `1`-`9` for an instant jump, or arrow + Enter. Renders on the terminal's alternate screen buffer so your scrollback stays intact when the picker exits. `j <text>` (or any literal path) skips the picker entirely.
+Press `1`-`9` for an instant jump, or arrow + Enter. Renders on the terminal's alternate screen buffer so your scrollback stays intact when the picker exits. `j <text>` (or any literal path) skips the picker entirely. Add your own destinations on the fly with `j -Add` (bookmarks the current folder) and drop them with `j -Remove <label>` — no config file to edit.
 
 ### Disk-free overview (`df`)
 
@@ -153,6 +153,8 @@ The installer seeds `Profiles/config.psd1` from `Profiles/config.example.psd1`. 
     Features = @{ DisableM365 = $false }
 }
 ```
+
+For a simple jump-folder favorite you don't need to touch config at all — `j -Add` bookmarks the current folder (and `j -Remove <label>` drops it), persisted under `%LOCALAPPDATA%`. `ExtraJumpFolders` is for destinations you want version-controlled with your config; `Machines/<COMPUTERNAME>.ps1` is for ones that need PowerShell to compute (env vars, `Test-Path` checks).
 
 For more complex per-machine logic (registering network drives, machine-specific functions, conditional setup), drop a `Profiles/Machines/<COMPUTERNAME>.ps1` — it's dot-sourced after the Common helpers load. Same pattern for `Profiles/Hosts/<HostName>.ps1` for per-host tweaks, e.g. a `Hosts/VisualStudioCodeHost.ps1` that swaps Oh My Posh for the lightweight Custom prompt in the VS Code PowerShell extension terminal. Plain terminals, including Windows Terminal, report `ConsoleHost`. Copy-ready `*.ps1.example` templates live in both folders; see their READMEs.
 

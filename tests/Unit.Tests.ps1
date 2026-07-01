@@ -547,6 +547,103 @@ Describe 'up' {
     }
 }
 
+Describe 'j bookmarks (-Add / -Remove)' {
+
+    BeforeEach {
+        # Isolate the store to a temp file and start from a known jump list, so
+        # the dev's real %LOCALAPPDATA% bookmarks are never read or written.
+        $script:savedBookmarkFile = $script:JumpBookmarkFile
+        $script:JumpBookmarkFile  = Join-Path ([IO.Path]::GetTempPath()) ("jb-ut-" + [Guid]::NewGuid().ToString('N') + '.json')
+        $script:savedJumpFolders  = $script:JumpFolders
+        $script:JumpFolders = @(
+            [pscustomobject]@{ Label = 'Home';      Path = $env:USERPROFILE }
+            [pscustomobject]@{ Label = 'Downloads'; Path = (Join-Path $env:USERPROFILE 'Downloads') }
+        )
+        $script:bmdir = Join-Path ([IO.Path]::GetTempPath()) ("jb-dir-" + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $bmdir | Out-Null
+    }
+    AfterEach {
+        Remove-Item -LiteralPath $script:JumpBookmarkFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $bmdir -Recurse -Force -ErrorAction SilentlyContinue
+        $script:JumpBookmarkFile = $script:savedBookmarkFile
+        $script:JumpFolders      = $script:savedJumpFolders
+    }
+
+    It 'adds the current directory, tagged as a user bookmark' {
+        Push-Location $bmdir
+        $expected = (Get-Location).Path        # Add uses Get-Location; compare like-for-like (8.3-safe)
+        try { j -Add 6>$null } finally { Pop-Location }
+
+        $leaf = Split-Path -Leaf $bmdir
+        $hit  = @($script:JumpFolders | Where-Object { $_.Label -eq $leaf })
+        $hit.Count     | Should -Be 1
+        $hit[0].Source | Should -Be 'user'
+        $hit[0].Path   | Should -Be $expected
+    }
+
+    It 'persists the bookmark so it reloads from disk on Sync' {
+        j -Add $bmdir -Label vms 6>$null
+        # Drop the in-memory user slice, then reload purely from the file.
+        $script:JumpFolders = @($script:JumpFolders | Where-Object { $_.Source -ne 'user' })
+        Sync-JumpBookmark
+        (@($script:JumpFolders | Where-Object Label -EQ 'vms')).Path | Should -Be (Resolve-Path -LiteralPath $bmdir).Path
+    }
+
+    It 'uses a custom -Label when given' {
+        j -Add $bmdir -Label myplace 6>$null
+        @($script:JumpFolders).Label | Should -Contain 'myplace'
+    }
+
+    It 'rejects a path that is not a directory' {
+        $file = Join-Path $bmdir 'a.txt'; Set-Content -LiteralPath $file -Value 'x'
+        j -Add $file -Label nope 6>$null
+        @(Get-JumpBookmark).Label | Should -Not -Contain 'nope'
+    }
+
+    It 'refuses to shadow a built-in label, and names the folder it clashes with' {
+        Push-Location $bmdir
+        try { $msg = (j -Add -Label Home 6>&1 | Out-String) } finally { Pop-Location }
+        @(Get-JumpBookmark).Count | Should -Be 0                                     # nothing stored
+        @($script:JumpFolders | Where-Object Label -EQ 'Home').Count | Should -Be 1  # built-in untouched
+        $msg | Should -Match ([regex]::Escape($env:USERPROFILE))                     # message points at the existing target
+    }
+
+    It 're-adding a label repoints it (upsert, no duplicate)' {
+        $other = Join-Path ([IO.Path]::GetTempPath()) ("jb-dir2-" + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $other | Out-Null
+        try {
+            j -Add $bmdir -Label spot 6>$null
+            j -Add $other -Label spot 6>$null
+            $hit = @(Get-JumpBookmark | Where-Object Label -EQ 'spot')
+            $hit.Count   | Should -Be 1
+            $hit[0].Path | Should -Be (Resolve-Path -LiteralPath $other).Path
+        } finally { Remove-Item -LiteralPath $other -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
+    It 'removes a bookmark by label' {
+        j -Add $bmdir -Label gone 6>$null
+        j -Remove gone 6>$null
+        @(Get-JumpBookmark).Label                                    | Should -Not -Contain 'gone'
+        @($script:JumpFolders | Where-Object Label -EQ 'gone').Count | Should -Be 0
+    }
+
+    It 'does not throw when removing an unknown label' {
+        { j -Remove no-such-bookmark 6>$null } | Should -Not -Throw
+    }
+
+    It 'will not remove a built-in destination via -Remove' {
+        j -Remove Home 6>$null
+        @($script:JumpFolders | Where-Object Label -EQ 'Home').Count | Should -Be 1
+    }
+
+    It 'stores a single bookmark as a JSON array (stable on-disk shape)' {
+        j -Add $bmdir -Label solo 6>$null
+        $raw = Get-Content -Raw -LiteralPath $script:JumpBookmarkFile
+        $raw.TrimStart()[0]              | Should -Be '['     # array, not a bare object
+        @($raw | ConvertFrom-Json).Count | Should -Be 1
+    }
+}
+
 Describe 'Get-PickerScrollTop (viewport scrolling math)' {
 
     It 'does not scroll when the cursor is already visible' {

@@ -51,6 +51,12 @@
     # Extra destinations appended to the built-in starter list (Home, Downloads,
     # OneDrive, LocalAppData, ProgramData).
     #
+    # For a quick favorite you don't need this at all — run `j -Add` to bookmark
+    # the current folder (or `j -Add <path> -Label <name>`); `j -Remove <label>`
+    # drops it. Those live under %LOCALAPPDATA% and load at every shell start.
+    # Use ExtraJumpFolders below when you want the destination version-controlled
+    # alongside this config.
+    #
     # IMPORTANT — only literal strings here. This file is parsed by
     # Import-PowerShellDataFile in restricted-language mode, which DISALLOWS
     # variable references and expressions:
