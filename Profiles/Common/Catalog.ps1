@@ -33,6 +33,7 @@ $script:ToolkitGroups = [ordered]@{
 # Functions that exist only to support the public commands — hidden unless -All.
 $script:ToolkitInternalCommands = @(
     'Invoke-JumpTo'
+    'Get-JumpBookmark', 'Save-JumpBookmark', 'Sync-JumpBookmark', 'Add-JumpBookmark', 'Remove-JumpBookmark'
     'Get-PeekRarExe', 'Get-Peek7zExe', 'Get-PeekTool'
     'Test-NativeSudoEnabled', 'Get-SudoExe'
     'Get-ProjectRoot', 'Find-GitProject'
