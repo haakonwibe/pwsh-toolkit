@@ -206,6 +206,15 @@ if (Test-Path $hostConfig) {
     catch { Write-Warning "pwsh-toolkit: failed to load Hosts\$hostName.ps1: $_" }
 }
 
+# ─── Jump-folder bookmarks (`j -Add`) ───────────────────────────────────────
+# Append saved user bookmarks to $script:JumpFolders HERE — after config,
+# machine, and host files have all added their entries — so bookmarks always
+# sit at the END of the list and can never shadow a built-in/config/machine
+# destination in `j <text>` first-match lookup. (Navigation.ps1 defines
+# Sync-JumpBookmark but deliberately doesn't call it at dot-source time; the
+# Get-Command guard keeps this quiet if Navigation.ps1 failed to load.)
+if (Get-Command Sync-JumpBookmark -ErrorAction Ignore) { Sync-JumpBookmark }
+
 # ─── OhMyPosh tail: Graph indicator + transient prompt ─────────────────────
 if ($script:Config.Prompt -eq 'OhMyPosh') {
     # Sync Microsoft.Graph connection state into $env:POSH_GRAPH for the OMP

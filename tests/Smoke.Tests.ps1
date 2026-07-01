@@ -138,9 +138,12 @@ Pop-Location
     # override for it must be named Hosts/ConsoleHost.ps1.
     $script:hostOverride = Join-Path $script:repoRoot 'Profiles' 'Hosts' 'ConsoleHost.ps1'
 
-    # If the dev's machine has a real config.psd1 / Hosts\ConsoleHost.ps1, move
-    # them aside for the duration of the tests and restore in AfterAll. The
-    # probes need a known, predictable state.
+    # If the dev's machine has a real config.psd1 / Hosts\ConsoleHost.ps1 / saved
+    # `j -Add` bookmarks, move them aside for the duration of the tests and
+    # restore in AfterAll. The probes need a known, predictable state — the
+    # bookmark store feeds $script:JumpFolders in every probe child.
+    $script:bookmarkStore = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit\jump-bookmarks.json'
+
     $script:configBackup = $null
     if (Test-Path -LiteralPath $script:userConfig) {
         $script:configBackup = "$($script:userConfig).pester-backup-$([Guid]::NewGuid())"
@@ -150,6 +153,11 @@ Pop-Location
     if (Test-Path -LiteralPath $script:hostOverride) {
         $script:hostBackup = "$($script:hostOverride).pester-backup-$([Guid]::NewGuid())"
         Move-Item -LiteralPath $script:hostOverride -Destination $script:hostBackup -Force
+    }
+    $script:bookmarkBackup = $null
+    if (Test-Path -LiteralPath $script:bookmarkStore) {
+        $script:bookmarkBackup = "$($script:bookmarkStore).pester-backup-$([Guid]::NewGuid())"
+        Move-Item -LiteralPath $script:bookmarkStore -Destination $script:bookmarkBackup -Force
     }
 
     try {
@@ -199,6 +207,9 @@ $script:Config.Prompt = 'Custom'
         if ($script:hostBackup -and (Test-Path -LiteralPath $script:hostBackup)) {
             Move-Item -LiteralPath $script:hostBackup -Destination $script:hostOverride -Force
         }
+        if ($script:bookmarkBackup -and (Test-Path -LiteralPath $script:bookmarkBackup)) {
+            Move-Item -LiteralPath $script:bookmarkBackup -Destination $script:bookmarkStore -Force
+        }
         throw
     }
 }
@@ -209,6 +220,9 @@ AfterAll {
     }
     if ($script:hostBackup -and (Test-Path -LiteralPath $script:hostBackup)) {
         Move-Item -LiteralPath $script:hostBackup -Destination $script:hostOverride -Force
+    }
+    if ($script:bookmarkBackup -and (Test-Path -LiteralPath $script:bookmarkBackup)) {
+        Move-Item -LiteralPath $script:bookmarkBackup -Destination $script:bookmarkStore -Force
     }
 }
 

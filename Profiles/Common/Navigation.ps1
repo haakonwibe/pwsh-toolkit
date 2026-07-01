@@ -125,7 +125,10 @@ function ... {
 #        $script:JumpFolders += [pscustomobject]@{ Label='VMs'; Path='D:\VMs' }
 #   3. Bookmarks you add live with `j -Add` — persisted as JSON under
 #      %LOCALAPPDATA%\pwsh-toolkit and tagged Source='user', so `j -Remove` can
-#      manage them without touching the built-ins or your config.
+#      manage them without touching the built-ins or your config. The LOADER
+#      appends these (Sync-JumpBookmark), after Machines/ and Hosts/ files have
+#      run — bookmarks always sit at the END of the list, so first-match lookup
+#      (`j <text>`) can never be shadowed-FROM by a bookmark, only shadowed-TO.
 
 $script:JumpFolders = @(
     [pscustomobject]@{ Label = 'Home';         Path = $env:USERPROFILE }
@@ -157,12 +160,17 @@ $script:JumpBookmarkFile = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit\jump-bookma
 function Get-JumpBookmark {
     # Read the saved bookmarks. A missing, empty, or corrupt file yields an empty
     # list and never throws — a bad file must not break profile load or `j`.
+    # Exception: -ThrowOnError, for callers about to REWRITE the store (j -Add).
+    # There a failed read must abort the operation instead of masquerading as an
+    # empty list, or the save would clobber every bookmark the file still holds.
+    param([switch] $ThrowOnError)
     if (-not (Test-Path -LiteralPath $script:JumpBookmarkFile)) { return @() }
     try {
         $raw = Get-Content -Raw -LiteralPath $script:JumpBookmarkFile -ErrorAction Stop
         if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
         $data = $raw | ConvertFrom-Json -ErrorAction Stop
     } catch {
+        if ($ThrowOnError) { throw }
         Write-Warning "pwsh-toolkit: couldn't read jump bookmarks ($script:JumpBookmarkFile): $($_.Exception.Message)"
         return @()
     }
@@ -188,12 +196,19 @@ function Save-JumpBookmark {
 }
 
 function Sync-JumpBookmark {
-    # Rebuild the user-bookmark slice of the live jump list from the store.
-    # Idempotent: it drops any existing Source='user' entries first, so calling it
-    # after every add/remove keeps the session list and the file in lock-step
-    # without disturbing built-in, config, or machine-file destinations.
+    # Rebuild the user-bookmark slice of the live jump list — from the store
+    # file, or from -Bookmark when the caller already holds the list (add/remove
+    # just wrote it; re-reading the file would be a wasted read and a window for
+    # divergence). Idempotent: drops any existing Source='user' entries first,
+    # and appends at the END so a bookmark never shadows a built-in/config/
+    # machine destination in first-match lookup. Called by the LOADER after
+    # Machines/ and Hosts/ files have appended their entries — deliberately not
+    # at this file's dot-source time, both for that ordering and so loading this
+    # file has no side effects (the unit tests dot-source it in-process).
+    param([object[]] $Bookmark)
+    if ($null -eq $Bookmark) { $Bookmark = @(Get-JumpBookmark) }
     $script:JumpFolders = @($script:JumpFolders | Where-Object { $_.Source -ne 'user' })
-    foreach ($b in Get-JumpBookmark) {
+    foreach ($b in $Bookmark) {
         $script:JumpFolders += [pscustomobject]@{ Label = $b.Label; Path = $b.Path; Source = 'user' }
     }
 }
@@ -201,25 +216,35 @@ function Sync-JumpBookmark {
 function Add-JumpBookmark {
     param([string] $Path, [string] $Label)
 
-    # Target: an explicit directory, or the current location.
+    # Target: an explicit directory, or the current location. Either way, store
+    # the PROVIDER path: (Get-Location).Path / (Resolve-Path).Path stay drive-
+    # qualified for a mapped PSDrive (W:\proj), which dies with the session that
+    # defined the drive — bookmarks must survive into shells that don't have it.
     if ($Path) {
         if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
             Write-Host "  Not a directory: $Path" -ForegroundColor Yellow
             return
         }
-        $resolved = (Resolve-Path -LiteralPath $Path).Path
+        $target = Resolve-Path -LiteralPath $Path
+        if ($target.Provider.Name -ne 'FileSystem') {
+            # Registry keys etc. are containers too — same rule as the branch below.
+            Write-Host "  Not a file-system path: $Path — j bookmarks folders only." -ForegroundColor Yellow
+            return
+        }
+        $resolved = $target.ProviderPath
     } else {
         $loc = Get-Location
         if ($loc.Provider.Name -ne 'FileSystem') {
             Write-Host '  Current location is not a file-system path — pass one: j -Add <dir>' -ForegroundColor Yellow
             return
         }
-        $resolved = $loc.Path
+        $resolved = $loc.ProviderPath
     }
 
-    # Default label: the leaf folder name (fall back to the path at a drive root).
+    # Default label: the leaf folder name, slash-trimmed so a drive root gives
+    # 'C:' not 'C:\' (Split-Path -Leaf returns a root path unchanged).
     if (-not $Label) {
-        $Label = Split-Path -Leaf $resolved
+        $Label = (Split-Path -Leaf $resolved).TrimEnd('\', '/')
         if ([string]::IsNullOrWhiteSpace($Label)) { $Label = $resolved.TrimEnd('\', '/') }
     }
 
@@ -227,15 +252,23 @@ function Add-JumpBookmark {
     # match, so a duplicate user entry would be unreachable. Ask them to rename it.
     $clash = @($script:JumpFolders | Where-Object { $_.Source -ne 'user' -and $_.Label -ieq $Label })
     if ($clash) {
-        Write-Host "  '$Label' already maps to $($clash[0].Path) (a built-in/config destination) — name this one differently: j -Add -Label <name>" -ForegroundColor Yellow
+        Write-Host "  '$Label' already maps to $($clash[0].Path) (a built-in/config/machine destination) — name this one differently: j -Add '$resolved' -Label <name>" -ForegroundColor Yellow
         return
     }
 
-    # Upsert by label (case-insensitive): re-adding a label repoints it.
-    $store  = @(Get-JumpBookmark | Where-Object { $_.Label -ine $Label })
+    # Upsert by label (case-insensitive): re-adding a label repoints it. If the
+    # store exists but can't be read, ABORT — saving over an unreadable file
+    # would silently destroy every bookmark it still holds.
+    try {
+        $store = @(Get-JumpBookmark -ThrowOnError | Where-Object { $_.Label -ine $Label })
+    } catch {
+        Write-Host "  Couldn't read the bookmark store, so not overwriting it: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  Fix or delete $script:JumpBookmarkFile and retry." -ForegroundColor Yellow
+        return
+    }
     $store += [pscustomobject]@{ Label = $Label; Path = $resolved }
     Save-JumpBookmark -Bookmark $store
-    Sync-JumpBookmark
+    Sync-JumpBookmark -Bookmark $store
     Write-Host "  Bookmarked '$Label' -> $resolved" -ForegroundColor Green
 }
 
@@ -252,20 +285,22 @@ function Remove-JumpBookmark {
     if (-not $hit) {
         $builtin = @($script:JumpFolders | Where-Object { $_.Source -ne 'user' -and $_.Label -ieq $Name })
         if ($builtin) {
-            Write-Host "  '$Name' is a built-in/config destination — remove it from config.psd1 or your machine file, not here." -ForegroundColor Yellow
+            # Don't send them to config.psd1: the starters are hard-coded above.
+            Write-Host "  '$Name' is a built-in/config/machine destination, not a bookmark — j -Remove only manages bookmarks added with j -Add." -ForegroundColor Yellow
         } else {
             Write-Host "  No bookmark labeled '$Name'." -ForegroundColor Yellow
         }
         return
     }
 
-    Save-JumpBookmark -Bookmark @($store | Where-Object { $_.Label -ine $Name })
-    Sync-JumpBookmark
+    $keep = @($store | Where-Object { $_.Label -ine $Name })
+    Save-JumpBookmark -Bookmark $keep
+    Sync-JumpBookmark -Bookmark $keep
     Write-Host "  Removed bookmark '$($hit[0].Label)'" -ForegroundColor Green
 }
 
-# Load any saved bookmarks into this session's jump list.
-Sync-JumpBookmark
+# NOTE: saved bookmarks are loaded by the LOADER calling Sync-JumpBookmark after
+# Machines/ and Hosts/ files run — not here. See the Sync-JumpBookmark comment.
 
 # Per-session navigation history. Reset on profile reload (acceptable).
 $script:JumpBack    = New-Object 'System.Collections.Generic.Stack[string]'
@@ -374,7 +409,7 @@ function j {
         [Parameter(Position = 0, ParameterSetName = 'Jump')]
         [string] $Match,
 
-        [Parameter(Mandatory, ParameterSetName = 'Add')]
+        [Parameter(ParameterSetName = 'Add')]
         [switch] $Add,
 
         [Parameter(Position = 0, ParameterSetName = 'Add')]
@@ -383,15 +418,34 @@ function j {
         [Parameter(ParameterSetName = 'Add')]
         [string] $Label,
 
-        [Parameter(Mandatory, ParameterSetName = 'Remove')]
+        [Parameter(ParameterSetName = 'Remove')]
         [switch] $Remove,
 
         [Parameter(Position = 0, ParameterSetName = 'Remove')]
         [string] $Name
     )
 
-    if ($Add)    { Add-JumpBookmark -Path $Path -Label $Label; return }
-    if ($Remove) { Remove-JumpBookmark -Name $Name; return }
+    # Dispatch on the bound parameter set, not the switches alone: `j -Label x`
+    # or `j -Path x` selects the Add set without -Add (and `j -Name x` the Remove
+    # set without -Remove). The switches are deliberately NOT Mandatory — that
+    # would stall those typos on a bare 'Add:' mandatory-parameter prompt — but
+    # they still gate the action, so a typo gets usage help, never a write.
+    if ($PSCmdlet.ParameterSetName -eq 'Add') {
+        if (-not $Add) {
+            Write-Host '  -Path/-Label go with -Add. Usage: j -Add [<path>] [-Label <name>]' -ForegroundColor Yellow
+            return
+        }
+        Add-JumpBookmark -Path $Path -Label $Label
+        return
+    }
+    if ($PSCmdlet.ParameterSetName -eq 'Remove') {
+        if (-not $Remove) {
+            Write-Host '  -Name goes with -Remove. Usage: j -Remove <label>' -ForegroundColor Yellow
+            return
+        }
+        Remove-JumpBookmark -Name $Name
+        return
+    }
 
     $items = @($script:JumpFolders)
 

@@ -114,8 +114,11 @@ flowchart TD
 
     Hosts{"Hosts/<HostName>.ps1<br/>exists?"}
     Hosts -->|Yes| HostLoad["Dot-source it<br/>(per-host overrides, e.g. VisualStudioCodeHost.ps1)"]
-    Hosts -->|No| OmpTail
-    HostLoad --> OmpTail
+    Hosts -->|No| Bookmarks
+    HostLoad --> Bookmarks
+
+    Bookmarks["Sync-JumpBookmark<br/>(append saved j -Add bookmarks last,<br/>after machine/host JumpFolders entries)"]
+    Bookmarks --> OmpTail
 
     OmpTail{OhMyPosh mode?}
     OmpTail -->|Yes| OmpHooks["Update-PoshGraphStatus once<br/>Register PowerShell.OnIdle for live Graph state<br/>Enable-PoshTransientPrompt (if available)"]
@@ -159,8 +162,9 @@ The shallow merge means: if the user defines `Features = @{ DisableM365 = $true 
 | 5 | If `Microsoft.Graph` is installed AND `Features.DisableM365` is false: enumerate `M365/*.ps1` and dot-source. | When skipped, a verbose message states the reason, and `toolkit` lists the group as "Not loaded" with the install hint. The gate needs the `Microsoft.Graph` meta-module by exact name; submodules alone do not open it. |
 | 6 | If `Machines/{COMPUTERNAME}.ps1` exists: dot-source. | Per-machine overrides land here. |
 | 7 | If `Hosts/{HostName}.ps1` exists: dot-source. | Per-host overrides (e.g. `VisualStudioCodeHost.ps1`; plain terminals report `ConsoleHost`). |
-| 8 | If `Prompt = 'OhMyPosh'`: wire `Update-PoshGraphStatus` + `PowerShell.OnIdle` event for Graph state; call `Enable-PoshTransientPrompt` if available. | |
-| 9 | Tail: `Show-ProfileTip` unless `$env:PSPROFILE_NO_TIPS` or `$Config.DisableStartupTips` is set. | Env var wins over config (handy for CI). |
+| 8 | `Sync-JumpBookmark` — append saved `j -Add` bookmarks to `$script:JumpFolders`. | Runs **after** machine/host files so bookmarks always sit at the end of the list and never shadow built-in/config/machine destinations in `j <text>` first-match. Guarded with `Get-Command` in case `Navigation.ps1` failed to load. |
+| 9 | If `Prompt = 'OhMyPosh'`: wire `Update-PoshGraphStatus` + `PowerShell.OnIdle` event for Graph state; call `Enable-PoshTransientPrompt` if available. | |
+| 10 | Tail: `Show-ProfileTip` unless `$env:PSPROFILE_NO_TIPS` or `$Config.DisableStartupTips` is set. | Env var wins over config (handy for CI). |
 
 Common load order today (alphabetical):
 
@@ -200,7 +204,7 @@ If you add a new Common file that calls another helper **at load time** (not fro
 
 ---
 
-## 5. The tip system (step 9 & `Tips.ps1`)
+## 5. The tip system (step 10 & `Tips.ps1`)
 
 At the tail of the loader:
 
@@ -211,7 +215,7 @@ if (-not $disableTips -and (Get-Command Show-ProfileTip -ErrorAction SilentlyCon
 }
 ```
 
-This works because `Tips.ps1` is loaded in step 4 (it's in `Common/`), so `Show-ProfileTip` exists by step 9. The `Get-Command` guard means the tip block degrades to silence if `Tips.ps1` is ever removed.
+This works because `Tips.ps1` is loaded in step 4 (it's in `Common/`), so `Show-ProfileTip` exists by step 10. The `Get-Command` guard means the tip block degrades to silence if `Tips.ps1` is ever removed.
 
 Tip state is cached at `%LOCALAPPDATA%\PSProfile\last-tip.txt` to avoid back-to-back repeats when spawning multiple shells. State writes are wrapped in try/catch — tip rotation is best-effort and never breaks profile load.
 
@@ -226,7 +230,7 @@ Tip state is cached at `%LOCALAPPDATA%\PSProfile\last-tip.txt` to avoid back-to-
 - **Calling an optional cmdlet from a function body:** guard with `Get-Command ... -ErrorAction Ignore`. See the gotcha at the end of section 4.
 - **Changing the tip system:** edit `Common/Tips.ps1`. The loader's tail picks it up automatically — no loader edits needed unless you change the call site.
 - **Per-machine config (`Machines/<COMPUTERNAME>.ps1`):** dot-sourced in step 6 — after all Common helpers exist but before host-specific config. Safe to call any Common function from here. Safe to append to `$script:JumpFolders`, override `$script:OneDriveOrg`, etc.
-- **Per-host config (`Hosts/<HostName>.ps1`):** dot-sourced last (before the OhMyPosh tail and tip). Same call-time guarantees as machine config.
+- **Per-host config (`Hosts/<HostName>.ps1`):** dot-sourced last (before the bookmark sync, OhMyPosh tail, and tip). Same call-time guarantees as machine config.
 - **Removing a Common file:** check the dependency table in section 4. The Common loader enumerates `*.ps1` blindly — no manifest to update — but other Common files (and the loader tail's `Show-ProfileTip` guard) may depend on it.
 
 ---
