@@ -642,6 +642,46 @@ Describe 'j bookmarks (-Add / -Remove)' {
         $raw.TrimStart()[0]              | Should -Be '['     # array, not a bare object
         @($raw | ConvertFrom-Json).Count | Should -Be 1
     }
+
+    It 'refuses to overwrite an unreadable store on -Add (the no-clobber guard)' {
+        # A corrupt (or locked) store must ABORT the add: reading it as an empty
+        # list and saving would silently destroy every bookmark it still holds.
+        Set-Content -LiteralPath $script:JumpBookmarkFile -Value '{ this is not json ]'
+        j -Add $bmdir -Label newone 6>$null
+        Get-Content -Raw -LiteralPath $script:JumpBookmarkFile | Should -Match 'this is not json'  # original bytes intact
+    }
+
+    It 'stores the provider path, not a PSDrive-qualified path' {
+        # A bookmark taken inside a mapped PSDrive must survive into sessions
+        # that don't have the drive.
+        New-PSDrive -Name JBUT -PSProvider FileSystem -Root $bmdir | Out-Null
+        try {
+            Push-Location JBUT:\
+            try { j -Add -Label psd 6>$null } finally { Pop-Location }
+            $stored = (@(Get-JumpBookmark | Where-Object Label -EQ 'psd')).Path
+            $stored.TrimEnd('\') | Should -Be ((Resolve-Path -LiteralPath $bmdir).Path.TrimEnd('\'))
+        } finally { Remove-PSDrive JBUT -ErrorAction SilentlyContinue }
+    }
+
+    It 'rejects a non-filesystem container path (registry keys are containers too)' {
+        j -Add HKCU:\Software -Label reg 6>$null
+        @(Get-JumpBookmark).Label | Should -Not -Contain 'reg'
+    }
+
+    It 'labels a drive root without the trailing slash' {
+        j -Add C:\ 6>$null
+        @(Get-JumpBookmark).Label | Should -Contain 'C:'
+    }
+
+    It 'gives usage help instead of stalling when -Label is used without -Add' {
+        { j -Label orphan 6>$null } | Should -Not -Throw     # was: mandatory-parameter prompt/binding error
+        @(Get-JumpBookmark).Count | Should -Be 0
+    }
+
+    It 'appends user bookmarks after existing entries (never shadows in first-match)' {
+        j -Add $bmdir -Label zzz-last 6>$null
+        (@($script:JumpFolders).Label)[-1] | Should -Be 'zzz-last'
+    }
 }
 
 Describe 'Get-PickerScrollTop (viewport scrolling math)' {
