@@ -210,7 +210,7 @@ Set `Prompt = 'OhMyPosh'` for the polished Oh My Posh variant (requires `oh-my-p
 ### M365 Functions (Loaded if Microsoft.Graph module is available)
 
 **Graph Connection:**
-- `Connect-Tenant` - Connect to Microsoft Graph with preset scopes. Read-only by default; `-Access Write` adds user/group management, `-Access Full` adds directory and app-registration writes
+- `Connect-Tenant` - Connect to Microsoft Graph with preset scopes covering directory *and* Intune at each tier. Read-only by default (reporting plus Intune device/policy/app/script/RBAC reads); `-Access Write` adds user/group management and the day-to-day Intune writes; `-Access Full` adds directory and app-registration writes, Intune RBAC/service-config writes, and privileged device actions (wipe, passcode reset)
 - `Disconnect-Tenant` - Disconnect from Microsoft Graph
 
 **Exchange Connection:**
