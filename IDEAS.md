@@ -38,7 +38,15 @@ pattern.
 
 ---
 
-## 2. Recent-files browser (`recent` / `fresh`)
+## 2. Recent-files browser (`recent` / `fresh`) — ✅ Shipped 2026-07-06
+
+Built in `Profiles/Common/Recent.ps1`. Resolved the open questions as: default 30
+files, `-Limit`/positional to change; newest N regardless of age (no time-window
+filter); sources are hardcoded defaults (Downloads + both Desktop variants) with
+machine additions via `$script:RecentFolders +=`, the `$script:JumpFolders`
+pattern as planned; Enter opens with the default app, and archives auto-`peek` —
+no extra picker key needed. ADS descriptions from `tagdl` show in the listing.
+Kept below for the design record.
 
 **What:** Cross-folder version of `fr`. Scans Downloads + Desktop + a configurable
 watchlist, shows the newest N files in a picker with the same BBS/4DOS coloring

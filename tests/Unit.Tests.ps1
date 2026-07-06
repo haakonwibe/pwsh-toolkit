@@ -32,6 +32,7 @@ BeforeAll {
 
     . (Join-Path $commonDir 'Aliases.ps1')        # touch, which, ll, la, ask
     . (Join-Path $commonDir 'Navigation.ps1')     # mkcd, up
+    . (Join-Path $commonDir 'Recent.ps1')         # Get-RecentFile, Format-FileAge (needs Navigation's $script:OneDrivePath)
     . (Join-Path $commonDir 'Peek.ps1')           # Get-PeekTool + exe finders
     . (Join-Path $commonDir 'RemoteServers.ps1')  # Format-RemoteServerDisplay, Get-RemoteServerByMatch
     . (Join-Path $commonDir 'Picker.ps1')         # Get-PickerScrollTop
@@ -544,6 +545,77 @@ Describe 'up' {
     It 'goes up N levels' {
         up 2
         (Get-Location).Path | Should -Be (Get-Item (Join-Path $base 'x')).FullName
+    }
+}
+
+Describe 'recent (Get-RecentFile)' {
+
+    BeforeEach {
+        # Two source folders with files at staggered ages, plus noise a correct
+        # implementation must skip: a subdirectory and a nonexistent folder.
+        $script:rdir1 = Join-Path ([IO.Path]::GetTempPath()) ("rf-ut1-" + [Guid]::NewGuid().ToString('N'))
+        $script:rdir2 = Join-Path ([IO.Path]::GetTempPath()) ("rf-ut2-" + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $rdir1, $rdir2 | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $rdir1 'subdir') | Out-Null
+        Set-Content -LiteralPath (Join-Path $rdir1 'old.txt')    -Value 'x'
+        Set-Content -LiteralPath (Join-Path $rdir1 'newest.txt') -Value 'x'
+        Set-Content -LiteralPath (Join-Path $rdir2 'middle.txt') -Value 'x'
+        (Get-Item (Join-Path $rdir1 'old.txt')).LastWriteTime    = (Get-Date).AddDays(-3)
+        (Get-Item (Join-Path $rdir2 'middle.txt')).LastWriteTime = (Get-Date).AddHours(-2)
+    }
+    AfterEach {
+        Remove-Item -LiteralPath $rdir1, $rdir2 -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'returns files newest-first across folders' {
+        (Get-RecentFile -Folder $rdir1, $rdir2).Name | Should -Be @('newest.txt', 'middle.txt', 'old.txt')
+    }
+
+    It 'honors -Limit' {
+        @(Get-RecentFile -Folder $rdir1, $rdir2 -Limit 2).Count | Should -Be 2
+    }
+
+    It 'skips nonexistent folders without error' {
+        $ghost = Join-Path ([IO.Path]::GetTempPath()) 'rf-ut-no-such-dir'
+        { Get-RecentFile -Folder $rdir1, $ghost } | Should -Not -Throw
+        @(Get-RecentFile -Folder $rdir1, $ghost).Count | Should -Be 2
+    }
+
+    It 'lists files only, not directories' {
+        (Get-RecentFile -Folder $rdir1).Name | Should -Not -Contain 'subdir'
+    }
+
+    It 'defaults to $script:RecentFolders' {
+        $saved = $script:RecentFolders
+        try {
+            $script:RecentFolders = @($rdir2)
+            (Get-RecentFile).Name | Should -Be @('middle.txt')
+        } finally { $script:RecentFolders = $saved }
+    }
+}
+
+Describe 'Format-FileAge' {
+
+    It 'says now for fresh (and future) timestamps' {
+        Format-FileAge (Get-Date)              | Should -Be 'now'
+        Format-FileAge (Get-Date).AddHours(1)  | Should -Be 'now'
+    }
+
+    It 'uses minutes under an hour' {
+        Format-FileAge (Get-Date).AddMinutes(-5) | Should -Be '5m'
+    }
+
+    It 'uses hours under a day' {
+        Format-FileAge (Get-Date).AddHours(-3) | Should -Be '3h'
+    }
+
+    It 'uses days under 30' {
+        Format-FileAge (Get-Date).AddDays(-12) | Should -Be '12d'
+    }
+
+    It 'falls back to a date at 30+ days' {
+        $t = (Get-Date).AddDays(-45)
+        Format-FileAge $t | Should -Be $t.ToString('yyyy-MM-dd')
     }
 }
 
