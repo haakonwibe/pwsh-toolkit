@@ -489,3 +489,32 @@ function j {
 
     if ($selected) { Invoke-JumpTo -Path $selected.Path }
 }
+
+# Tab completion for the jumper. `j <TAB>` cycles destination labels;
+# `j -Remove <TAB>` (the Name parameter) offers only Source='user' bookmarks,
+# because those are the only entries j -Remove can drop. Matching is substring,
+# not prefix, to mirror `j <text>`'s own lookup — `j load<TAB>` finds Downloads
+# and LocalAppData just like `j load` would jump to one of them. The path shows
+# as the tooltip. Kept in a $script: variable so the unit tests can invoke the
+# completer directly; -Path (the -Add target) keeps PowerShell's native file
+# completion by staying unregistered.
+$script:JumpLabelCompleter = {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    $null = $commandName, $commandAst, $fakeBoundParameters   # signature fixed by Register-ArgumentCompleter
+    $pool = if ($parameterName -eq 'Name') {
+        @($script:JumpFolders | Where-Object { $_.Source -eq 'user' })
+    } else {
+        @($script:JumpFolders)
+    }
+    $word = $wordToComplete.Trim("'`"")
+    $safe = [WildcardPattern]::Escape($word)
+    foreach ($f in $pool) {
+        if (-not $word -or $f.Label -like "*$safe*") {
+            # Quote labels with spaces so the completed text binds as one argument.
+            $text = if ($f.Label -match '\s') { "'$($f.Label)'" } else { $f.Label }
+            [System.Management.Automation.CompletionResult]::new($text, $f.Label, 'ParameterValue', $f.Path)
+        }
+    }
+}
+Register-ArgumentCompleter -CommandName j -ParameterName Match -ScriptBlock $script:JumpLabelCompleter
+Register-ArgumentCompleter -CommandName j -ParameterName Name  -ScriptBlock $script:JumpLabelCompleter
