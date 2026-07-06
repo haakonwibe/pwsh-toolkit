@@ -88,7 +88,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 | **`Update-PoshThemes` / `Set-PoshTheme` / `Get-PoshTheme`** | Oh My Posh theme tools. `Update-PoshThemes` downloads the full ~120-theme gallery into a local cache; `Set-PoshTheme` is a `Show-Picker` over all themes (+ a Random entry) that previews live and prints the config snippet; `Get-PoshTheme` reports the active theme. Set `OhMyPoshTheme = 'Random'` for a different theme each shell (the loader names the one it rolled so you can pin it). |
 | **`ll` / `la` / `lh` / `touch` / `which`** | The shell-script staples. `ll` lists; `la` adds hidden/system entries; `lh` shows *only* hidden/system entries; `touch` creates files or bumps timestamps without ever truncating (accepts paths + multiple targets); `which` resolves a command to its backing path, alias target, or kind. |
 
-**M365 helpers** (loaded only if `Microsoft.Graph` is installed): `Connect-Tenant`, `Connect-Exchange`, `Get-TenantOverview`, `Get-TeamsInfo`, `Disconnect-Tenant`, `Disconnect-Exchange`.
+**M365 helpers** (loaded only if `Microsoft.Graph` is installed): `Connect-Tenant`, `Connect-Exchange`, `Get-TenantOverview`, `Get-IntuneOverview`, `Get-TeamsInfo`, `Disconnect-Tenant`, `Disconnect-Exchange`.
 
 > Every command carries `Get-Help` documentation — try `Get-Help touch -Examples` or `Get-Help j` for usage and examples right in the terminal. The rotating startup `tip` is the at-a-glance counterpart.
 

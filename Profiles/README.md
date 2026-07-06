@@ -28,7 +28,8 @@ Profiles/
 ├── M365/                               # Microsoft 365 admin tools (loaded if Microsoft.Graph is installed)
 │   ├── GraphConnection.ps1
 │   ├── ExchangeConnection.ps1
-│   └── TenantManagement.ps1
+│   ├── TenantManagement.ps1
+│   └── IntuneManagement.ps1
 ├── OhMyPosh/                           # Theme files for Prompt = 'OhMyPosh'
 │   ├── default.omp.json
 │   └── README.md
@@ -220,6 +221,7 @@ Set `Prompt = 'OhMyPosh'` for the polished Oh My Posh variant (requires `oh-my-p
 
 **Tenant Management:**
 - `Get-TenantOverview` - Comprehensive tenant statistics and overview
+- `Get-IntuneOverview` - Intune device-management snapshot: devices by compliance state and OS, sync health (stale devices named), configuration/compliance/Settings Catalog policy counts, managed apps. Read-only — covered by `Connect-Tenant`'s default tier
 - `Get-TeamsInfo [TeamName]` - Get Teams information
 
 ## Customization

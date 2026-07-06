@@ -11,6 +11,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `Get-IntuneOverview` — the payoff for `Connect-Tenant`'s Intune tiers: one read-only snapshot of the device estate. Devices by compliance state (non-compliant ones named), by OS, sync health with stale devices (30+ days) called out individually, configuration surface (classic profiles, compliance policies, and Settings Catalog policies — the latter via the `/beta` endpoint, best-effort), and managed-app count. Built on `Invoke-MgGraphRequest` with a shared paging helper, so no Graph submodule beyond the authentication one every connected session already has. Everything is covered by the default ReadOnly tier.
 - `j` now tab-completes its destinations: `j <TAB>` cycles the labels (built-ins, config, machine entries, and your `j -Add` bookmarks) with the target path shown as the tooltip, and `j -Remove <TAB>` offers only your own bookmarks — the only entries it can drop. Matching is substring, mirroring `j <text>`'s own lookup, and labels with spaces complete quoted.
 
 ## [0.4.0] - 2026-07-06
