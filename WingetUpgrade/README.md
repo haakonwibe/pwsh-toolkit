@@ -28,6 +28,16 @@ Lists every package with an available upgrade, lets you pick which ones to insta
 
 # Override log directory
 .\Invoke-WingetUpgrade.ps1 -LogDirectory 'D:\Logs\WingetUpgrade'
+
+# Anchor a package so it's never offered again (winget pin)
+.\Invoke-WingetUpgrade.ps1 -Pin Tailscale
+
+# Gate instead of hide: keep offering fixes within a branch, never past it
+.\Invoke-WingetUpgrade.ps1 -Pin 'Assessment and Deployment' -Version '10.1.26100.*'
+
+# List / remove anchors
+.\Invoke-WingetUpgrade.ps1 -Pins
+.\Invoke-WingetUpgrade.ps1 -Unpin Tailscale
 ```
 
 ### Selector controls
@@ -37,9 +47,22 @@ Lists every package with an available upgrade, lets you pick which ones to insta
 | `↑` / `↓` | Move cursor |
 | `Space` | Toggle current row |
 | `A` | Toggle all on/off |
+| `P` | Pin (anchor) the highlighted package — drops it from the list and every future run |
 | `PgUp` / `PgDn`, `Home` / `End` | Fast navigation |
 | `Enter` | Confirm and proceed |
 | `Esc` (or `Q`) | Cancel |
+
+---
+
+## 📌 Anchoring packages (pins)
+
+Some upgrades you never want — e.g. the Windows ADK's 10.1.28000 line is arm64-focused, and taking it would break servicing x86/x64 images. Anchoring uses **winget's native pin store**, not a config file of this repo's own, so a pin also protects you when running plain `winget upgrade --all` outside the toolkit.
+
+- `-Pin <match>` (or `P` in the picker) — plain pin: the package stops being offered. Explicit `winget upgrade <id>` can still bypass it; add `-Blocking` to refuse even that.
+- `-Pin <match> -Version '10.1.26100.*'` — **gating** pin: upgrades *within* the gate keep being offered (the trailing `*` wildcards the last version part), anything outside it never is. The right tool for "stay on this branch".
+- `-Unpin <match>` removes the pin; `-Pins` lists them.
+
+One implementation detail worth knowing: current `Microsoft.WinGet.Client` builds ship no `Get-WinGetPin`, so the module listing path can't see winget's pin store. Pins created *through this script* are therefore mirrored to `%LOCALAPPDATA%\WingetUpgrade\pinned.json` and filtered from the module listing (gate-aware). Pins added with raw `winget pin add` outside the script are still honored by the text path (winget hides them natively) but may appear in the module-path picker until the module ships a pin query — pin through `winup` and everything lines up.
 
 ---
 
@@ -51,6 +74,8 @@ A wrapper alias is defined in [`Profiles/Common/Aliases.ps1`](../Profiles/Common
 winup            # interactive selector
 winup -All       # upgrade everything
 winup -IncludeUnknown
+winup -Pin ADK -Version '10.1.26100.*'   # anchor: gate the ADK to its 26100 branch
+winup -Pins      # list anchors
 ```
 
 Reload the profile (`. $PROFILE`) or open a new terminal after pulling.
