@@ -9,6 +9,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `j` now tab-completes its destinations: `j <TAB>` cycles the labels (built-ins, config, machine entries, and your `j -Add` bookmarks) with the target path shown as the tooltip, and `j -Remove <TAB>` offers only your own bookmarks — the only entries it can drop. Matching is substring, mirroring `j <text>`'s own lookup, and labels with spaces complete quoted.
+
 ## [0.4.0] - 2026-07-06
 
 ### Added

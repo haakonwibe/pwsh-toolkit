@@ -684,6 +684,54 @@ Describe 'j bookmarks (-Add / -Remove)' {
     }
 }
 
+Describe 'j tab completion' {
+
+    BeforeEach {
+        $script:savedJumpFolders = $script:JumpFolders
+        $script:JumpFolders = @(
+            [pscustomobject]@{ Label = 'Home';         Path = $env:USERPROFILE }
+            [pscustomobject]@{ Label = 'Downloads';    Path = (Join-Path $env:USERPROFILE 'Downloads') }
+            [pscustomobject]@{ Label = 'LocalAppData'; Path = $env:LOCALAPPDATA }
+            [pscustomobject]@{ Label = 'My Repo';      Path = 'C:\GitHub\repo'; Source = 'user' }
+        )
+    }
+    AfterEach { $script:JumpFolders = $script:savedJumpFolders }
+
+    It 'offers every label on an empty word' {
+        @(& $script:JumpLabelCompleter 'j' 'Match' '' $null @{}).Count | Should -Be 4
+    }
+
+    It 'matches by substring, mirroring j''s own lookup' {
+        $r = @(& $script:JumpLabelCompleter 'j' 'Match' 'lo' $null @{})   # down'lo'ads + 'lo'calappdata
+        $r.ListItemText | Should -Contain 'Downloads'
+        $r.ListItemText | Should -Contain 'LocalAppData'
+        $r.ListItemText | Should -Not -Contain 'Home'
+    }
+
+    It 'shows the destination path as the tooltip' {
+        (& $script:JumpLabelCompleter 'j' 'Match' 'Home' $null @{}).ToolTip | Should -Be $env:USERPROFILE
+    }
+
+    It 'completes only user bookmarks for -Remove (the Name parameter)' {
+        $r = @(& $script:JumpLabelCompleter 'j' 'Name' '' $null @{})
+        $r.Count            | Should -Be 1
+        $r[0].ListItemText  | Should -Be 'My Repo'
+    }
+
+    It 'quotes labels containing spaces so they bind as one argument' {
+        (& $script:JumpLabelCompleter 'j' 'Name' 'repo' $null @{}).CompletionText | Should -Be "'My Repo'"
+    }
+
+    It 'does not throw on wildcard metacharacters in the word' {
+        { & $script:JumpLabelCompleter 'j' 'Match' '[' $null @{} } | Should -Not -Throw
+    }
+
+    It 'is wired into TabExpansion2 end-to-end' {
+        $r = TabExpansion2 -inputScript 'j down' -cursorColumn 6
+        @($r.CompletionMatches).ListItemText | Should -Contain 'Downloads'
+    }
+}
+
 Describe 'Get-PickerScrollTop (viewport scrolling math)' {
 
     It 'does not scroll when the cursor is already visible' {
