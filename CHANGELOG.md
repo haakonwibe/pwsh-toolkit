@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-06
+
 ### Added
 
 - `winup` can now anchor packages you never want offered: `winup -Pin <name>` (or the new `P` key on the highlighted row in the picker) pins a package, `-Unpin <name>` releases it, `-Pins` lists them. Anchors are winget's own pin store — not a toolkit config file — so a plain `winget upgrade --all` outside the toolkit honors them too. `-Pin <name> -Version '10.1.26100.*'` makes it a gating pin: upgrades within the branch keep being offered, anything past it never is (the fix for "the next ADK line is arm64-only and would break x86/x64 image servicing"); `-Blocking` refuses even explicit upgrades. Because current `Microsoft.WinGet.Client` builds ship no pin query, pins created through `winup` are also mirrored to `%LOCALAPPDATA%\WingetUpgrade\pinned.json` so the module listing path filters them (gate-aware) — closing the previously documented gap where a pinned package could still appear in the module-path picker.
