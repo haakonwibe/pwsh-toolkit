@@ -26,6 +26,32 @@
 .PARAMETER LogDirectory
     Override the log directory. Defaults to C:\ProgramData\WingetUpgrade\Logs.
 
+.PARAMETER Pin
+    Anchor package(s): create a winget pin so the package stops being offered —
+    by this script AND by plain `winget upgrade --all` outside it. Matches
+    installed packages by name/id substring (resolved through the WinGet module
+    when it's installed; otherwise winget resolves the query itself). Combine
+    with -Version to gate instead of hide, -Blocking to refuse even explicit
+    upgrades. The picker's P key pins the highlighted row the same way.
+
+.PARAMETER Version
+    With -Pin: create a gating pin instead of hiding the package. Upgrades
+    within the gate keep being offered; a trailing '*' wildcards the last
+    version part.
+
+.PARAMETER Blocking
+    With -Pin: block the package from upgrading even when named explicitly
+    (`winget upgrade <id>`), until the pin is removed.
+
+.PARAMETER Unpin
+    Remove a pin created with -Pin or the picker's P key, by name/id substring.
+    Falls back to letting winget resolve the query for pins created outside
+    this script.
+
+.PARAMETER Pins
+    List pins: first the ones this script created (its local mirror), then
+    winget's full pin store.
+
 .EXAMPLE
     .\Invoke-WingetUpgrade.ps1
     Show the picker, choose packages, upgrade.
@@ -33,6 +59,15 @@
 .EXAMPLE
     .\Invoke-WingetUpgrade.ps1 -All
     Upgrade everything non-interactively.
+
+.EXAMPLE
+    .\Invoke-WingetUpgrade.ps1 -Pin 'Assessment and Deployment' -Version '10.1.26100.*'
+    Gate both ADK packages to the 26100 branch: fixes within the branch keep
+    being offered, the arm64-only 28000 line is never offered.
+
+.EXAMPLE
+    .\Invoke-WingetUpgrade.ps1 -Unpin ADK
+    Drop the ADK pins again.
 #>
 [CmdletBinding()]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'All', Justification = 'Read via $script:All inside Select-Packages (verified); the analyzer cannot trace the cross-scope reference.')]
@@ -40,7 +75,12 @@ param(
     [switch] $All,
     [switch] $IncludeUnknown,
     [switch] $InstallWinGetModule,
-    [string] $LogDirectory
+    [string] $LogDirectory,
+    [string] $Pin,
+    [string] $Version,
+    [switch] $Blocking,
+    [string] $Unpin,
+    [switch] $Pins
 )
 
 $ErrorActionPreference = 'Stop'
@@ -106,6 +146,175 @@ Write-Host '  Winget Upgrade Helper' -ForegroundColor Cyan
 Write-Host '  ---------------------' -ForegroundColor Cyan
 Write-Log "Log file: $logFile"
 Write-Log "winget: $((winget --version) 2>&1)"
+
+# ---------- Pins (anchors) ----------
+# winget's native pin store IS the anchoring mechanism: a pinned package is
+# hidden from `winget upgrade` (the text listing path) and the pin also protects
+# manual `winget upgrade --all` runs outside this script. -Pin/-Unpin/-Pins are
+# the front door; the picker's P key pins in place.
+#
+# The mirror file exists because current Microsoft.WinGet.Client builds ship no
+# Get-WinGetPin, so the module listing path cannot see winget's pin store at
+# all. Every pin created HERE is therefore recorded locally, and
+# Get-WingetUpgradeObject filters against the union of this mirror and
+# Get-WinGetPin (for whenever a module version ships it). Pins created with raw
+# `winget pin add` outside this script stay invisible to the module path until
+# then — the text path hides them natively either way. `winget pin list` output
+# is never parsed (localized text; see the note in Get-WingetUpgradeObject).
+$script:PinMirrorFile = Join-Path $env:LOCALAPPDATA 'WingetUpgrade\pinned.json'
+
+function Get-PinMirror {
+    # Read the mirror. Missing/empty/corrupt file → empty list, never throws.
+    if (-not (Test-Path -LiteralPath $script:PinMirrorFile)) { return @() }
+    try {
+        $raw = Get-Content -Raw -LiteralPath $script:PinMirrorFile -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
+        $data = $raw | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Write-Log ("Couldn't read the pin mirror ({0}): {1}" -f $script:PinMirrorFile, $_.Exception.Message) -Level WARN
+        return @()
+    }
+    @($data) | Where-Object { $_ -and $_.Id } | ForEach-Object {
+        [pscustomobject]@{ Id = [string]$_.Id; Gate = [string]$_.Gate; Blocking = [bool]$_.Blocking }
+    }
+}
+
+function Save-PinMirror {
+    param([AllowEmptyCollection()][object[]] $Entry)
+    $dir = Split-Path -Parent $script:PinMirrorFile
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $clean = @($Entry | ForEach-Object { [pscustomobject]@{ Id = $_.Id; Gate = $_.Gate; Blocking = [bool]$_.Blocking } })
+    $json  = if ($clean.Count -eq 0) { '[]' } else { $clean | ConvertTo-Json -Depth 3 -AsArray }
+    Set-Content -LiteralPath $script:PinMirrorFile -Value $json -Encoding utf8
+}
+
+# One `winget pin add/remove` for a concrete ID, output suppressed — only the
+# exit code matters, and pin output is localized console text that must not
+# repaint over the picker when P is pressed mid-selection.
+function Invoke-WingetPin {
+    param(
+        [Parameter(Mandatory)][ValidateSet('add', 'remove')][string] $Action,
+        [Parameter(Mandatory)][string] $Id,
+        [string] $Gate,
+        [switch] $Blocking
+    )
+    $pinArgs = @('pin', $Action, '--id', $Id, '--exact', '--accept-source-agreements', '--disable-interactivity')
+    if ($Action -eq 'add' -and $Gate)     { $pinArgs += @('--version', $Gate) }
+    if ($Action -eq 'add' -and $Blocking) { $pinArgs += '--blocking' }
+    & winget @pinArgs *> $null
+    return $LASTEXITCODE
+}
+
+function Add-WinupPin {
+    param([Parameter(Mandatory)][string] $Match, [string] $Gate, [switch] $Blocking)
+
+    # Resolve the match to concrete IDs through the module when it's installed
+    # (structured, locale-proof). Without it, hand the query to winget itself —
+    # its resolution is fine; we just can't learn the chosen ID for the mirror,
+    # which is harmless because the mirror only feeds the module listing path
+    # that is equally unavailable without the module.
+    if (Get-Module -ListAvailable -Name Microsoft.WinGet.Client) {
+        Import-Module Microsoft.WinGet.Client -ErrorAction Stop
+        $hits = @(Get-WinGetPackage -ErrorAction Stop |
+            Where-Object { $_.Id -like "*$Match*" -or $_.Name -like "*$Match*" })
+        if (-not $hits) {
+            Write-Log ("No installed package matches '{0}'." -f $Match) -Level ERROR
+            return 1
+        }
+        $kind = if ($Blocking) { ' (blocking)' } elseif ($Gate) { " (gate $Gate)" } else { '' }
+        Write-Host ''
+        Write-Host ("  About to pin{0}:" -f $kind) -ForegroundColor Cyan
+        foreach ($h in $hits) { Write-Host ("    - {0}  ({1})" -f $h.Name, $h.Id) -ForegroundColor Gray }
+        if ($hits.Count -gt 1 -and -not [Console]::IsInputRedirected) {
+            Write-Host ("  Pin all {0}? [Y/n] " -f $hits.Count) -ForegroundColor Yellow -NoNewline
+            # Read-Host throws under -NonInteractive; treat that as the default (Y),
+            # same as pressing Enter — the prompt's default is to proceed.
+            $answer = try { Read-Host } catch { '' }
+            if ($answer -match '^(n|no)$') { Write-Log 'Pin cancelled at confirmation.'; return 0 }
+        }
+        $mirror = @(Get-PinMirror)
+        $fail = 0
+        foreach ($h in $hits) {
+            $exit = Invoke-WingetPin -Action add -Id $h.Id -Gate $Gate -Blocking:$Blocking
+            if ($exit -eq 0) {
+                # Upsert so re-pinning with a new gate replaces the old entry.
+                $mirror  = @($mirror | Where-Object { $_.Id -ne $h.Id })
+                $mirror += [pscustomobject]@{ Id = $h.Id; Gate = $Gate; Blocking = [bool]$Blocking }
+                Write-Log ("Pinned {0}{1} — no longer offered for upgrade." -f $h.Id, $kind) -Level OK
+            } else {
+                Write-Log ("winget pin add failed for {0} (exit {1}). Already pinned? Check: winget pin list" -f $h.Id, $exit) -Level ERROR
+                $fail++
+            }
+        }
+        Save-PinMirror -Entry $mirror
+        return ([int][bool]$fail)
+    }
+
+    # No module: let winget resolve the query itself and show its output
+    # (Out-Host so the text displays without becoming this function's return value).
+    $pinArgs = @('pin', 'add', '--query', $Match, '--accept-source-agreements', '--disable-interactivity')
+    if ($Gate)     { $pinArgs += @('--version', $Gate) }
+    if ($Blocking) { $pinArgs += '--blocking' }
+    & winget @pinArgs | Out-Host
+    if ($LASTEXITCODE -eq 0) { Write-Log ("Pinned '{0}' (resolved by winget)." -f $Match) -Level OK; return 0 }
+    Write-Log ("winget pin add failed for '{0}' (exit {1})." -f $Match, $LASTEXITCODE) -Level ERROR
+    return 1
+}
+
+function Remove-WinupPin {
+    param([Parameter(Mandatory)][string] $Match)
+
+    $mirror = @(Get-PinMirror)
+    $hits   = @($mirror | Where-Object { $_.Id -like "*$Match*" })
+    if ($hits) {
+        foreach ($h in $hits) {
+            $exit = Invoke-WingetPin -Action remove -Id $h.Id
+            # Drop the mirror entry regardless: a nonzero exit here usually means
+            # the pin was already removed with raw `winget pin remove`, and a
+            # stale mirror entry would keep hiding the package from the module
+            # listing forever.
+            $mirror = @($mirror | Where-Object { $_.Id -ne $h.Id })
+            if ($exit -eq 0) { Write-Log ("Unpinned {0} — it will be offered again." -f $h.Id) -Level OK }
+            else { Write-Log ("winget reported no pin for {0} (exit {1}); cleared it from the mirror." -f $h.Id, $exit) -Level WARN }
+        }
+        Save-PinMirror -Entry $mirror
+        return 0
+    }
+
+    # Not in the mirror — maybe pinned outside this script. Let winget resolve it.
+    & winget pin remove --query $Match --accept-source-agreements --disable-interactivity | Out-Host
+    if ($LASTEXITCODE -eq 0) { Write-Log ("Unpinned '{0}' (was not in the mirror)." -f $Match) -Level OK; return 0 }
+    Write-Log ("No pin matching '{0}' found by winup or winget (exit {1})." -f $Match, $LASTEXITCODE) -Level ERROR
+    return 1
+}
+
+function Show-WinupPin {
+    $mirror = @(Get-PinMirror)
+    Write-Host ''
+    if ($mirror.Count -gt 0) {
+        Write-Host '  Pins created by winup (mirrored for the module listing):' -ForegroundColor Cyan
+        foreach ($m in $mirror) {
+            $kind = if ($m.Blocking) { 'blocking' } elseif ($m.Gate) { "gate $($m.Gate)" } else { 'pin' }
+            Write-Host ("    - {0}  [{1}]" -f $m.Id, $kind) -ForegroundColor Gray
+        }
+    } else {
+        Write-Host '  No pins created by winup.  (Anchor one with: winup -Pin <name>, or P in the picker.)' -ForegroundColor DarkGray
+    }
+    # winget's full pin store (also covers pins added outside winup). Display-only
+    # passthrough — never parsed, so localized output is fine here.
+    Write-Host ''
+    Write-Host '  winget pin list:' -ForegroundColor Cyan
+    & winget pin list --accept-source-agreements --disable-interactivity | ForEach-Object { Write-Host "  $_" }
+}
+
+# Pin verbs run and exit before any upgrade listing happens.
+if (($Version -or $Blocking) -and -not $Pin) {
+    Write-Log '-Version and -Blocking only apply together with -Pin.' -Level ERROR
+    exit 2
+}
+if ($Pins)  { Show-WinupPin; exit 0 }
+if ($Unpin) { exit (Remove-WinupPin -Match $Unpin) }
+if ($Pin)   { exit (Add-WinupPin -Match $Pin -Gate $Version -Blocking:$Blocking) }
 
 # Non-elevated runs still work — machine-scope packages just trigger a UAC
 # prompt each. Warn so the user isn't surprised by a click-fest mid-batch.
@@ -182,14 +391,28 @@ function Get-WingetUpgradeObject {
         }
     }
 
+    # winup's own pin mirror closes that gap for pins created here (-Pin or the
+    # picker's P key): plain and blocking pins hide the package outright; a
+    # gated pin hides only offers OUTSIDE the gate — the newest in-gate version
+    # is still offered, matching winget's own gating semantics on the text path.
+    $mirror     = @(Get-PinMirror)
+    $hideAlways = @($pinnedIds) + @($mirror | Where-Object { -not $_.Gate } | ForEach-Object Id)
+    $gate       = @{}
+    foreach ($m in $mirror) { if ($m.Gate) { $gate[$m.Id] = $m.Gate } }
+
     $pkgs = New-Object System.Collections.Generic.List[object]
     foreach ($p in (Get-WinGetPackage -ErrorAction Stop |
-                    Where-Object { $_.IsUpdateAvailable -and $_.Id -notin $pinnedIds })) {
+                    Where-Object { $_.IsUpdateAvailable -and $_.Id -notin $hideAlways })) {
+        $available = @($p.AvailableVersions)[0]   # newest first; blank-safe if absent
+        if ($gate.ContainsKey($p.Id)) {
+            $available = @($p.AvailableVersions) | Where-Object { $_ -like $gate[$p.Id] } | Select-Object -First 1
+            if (-not $available -or $available -eq $p.InstalledVersion) { continue }   # nothing new within the gate
+        }
         $pkgs.Add([pscustomobject]@{
             Name      = $p.Name
             Id        = $p.Id
             Version   = $p.InstalledVersion
-            Available = @($p.AvailableVersions)[0]   # newest first; blank-safe if absent
+            Available = $available
             Source    = $p.Source
         })
     }
@@ -408,6 +631,8 @@ function Show-InteractiveSelector {
     $cursor   = 0
     $viewTop  = 0
     $cancelled = $false
+    $emptied   = $false
+    $notice    = ''
 
     Clear-Host
     [Console]::CursorVisible = $false
@@ -427,7 +652,7 @@ function Show-InteractiveSelector {
             $countSel = @($selected | Where-Object { $_ }).Count
             $headerLine = "  $Title  ($countSel of $($Items.Count) selected)"
             Write-Host $headerLine.PadRight([Math]::Max(0, [Console]::WindowWidth - 1)) -ForegroundColor Cyan
-            $hint = '  Up/Down move  Space toggle  A toggle-all  Enter confirm  Esc cancel'
+            $hint = '  Up/Down move  Space toggle  A toggle-all  P pin (never offer again)  Enter confirm  Esc cancel'
             Write-Host $hint.PadRight([Math]::Max(0, [Console]::WindowWidth - 1)) -ForegroundColor DarkGray
             Write-Host ''.PadRight([Math]::Max(0, [Console]::WindowWidth - 1))
 
@@ -456,9 +681,15 @@ function Show-InteractiveSelector {
                 $scrollInfo = "  -- showing $($viewTop + 1)-$($viewTop + $visible) of $($Items.Count) --"
             }
             Write-Host ''.PadRight([Math]::Max(0, [Console]::WindowWidth - 1))
-            Write-Host $scrollInfo.PadRight([Math]::Max(0, [Console]::WindowWidth - 1)) -ForegroundColor DarkGray
+            # The footer line doubles as the P-key feedback slot: a pin action's
+            # result shows here for one keypress, then the scroll info returns.
+            $footer      = if ($notice) { "  $notice" } else { $scrollInfo }
+            $footerColor = if ($notice) { 'Yellow' } else { 'DarkGray' }
+            if ($footer.Length -ge [Console]::WindowWidth) { $footer = $footer.Substring(0, [Console]::WindowWidth - 1) }
+            Write-Host $footer.PadRight([Math]::Max(0, [Console]::WindowWidth - 1)) -ForegroundColor $footerColor
 
             $key = [Console]::ReadKey($true)
+            $notice = ''
             switch ($key.Key) {
                 'UpArrow'   { if ($cursor -gt 0) { $cursor-- } }
                 'DownArrow' { if ($cursor -lt $Items.Count - 1) { $cursor++ } }
@@ -476,8 +707,34 @@ function Show-InteractiveSelector {
                         for ($i = 0; $i -lt $selected.Count; $i++) { $selected[$i] = -not $allOn }
                     }
                     elseif ($c -eq 'q') { $cancelled = $true; break }
+                    elseif ($c -eq 'p') {
+                        # Anchor the highlighted package: winget pin (native store,
+                        # so plain `winget upgrade --all` skips it too) + the mirror
+                        # (so the module listing skips it), then drop the row.
+                        # Invoke-WingetPin suppresses winget's output — anything it
+                        # printed would repaint over this UI.
+                        $item = $Items[$cursor]
+                        $exit = Invoke-WingetPin -Action add -Id $item.Id
+                        if ($exit -eq 0) {
+                            $mirror  = @(Get-PinMirror | Where-Object { $_.Id -ne $item.Id })
+                            $mirror += [pscustomobject]@{ Id = $item.Id; Gate = ''; Blocking = $false }
+                            Save-PinMirror -Entry $mirror
+                            $script:PinnedInPicker += , $item
+                            $keep     = @(0..($Items.Count - 1) | Where-Object { $_ -ne $cursor })
+                            $Items    = @($Items[$keep])
+                            $rows     = @($rows[$keep])
+                            $selected = @($selected[$keep])
+                            if ($Items.Count -eq 0) { $emptied = $true }
+                            elseif ($cursor -ge $Items.Count) { $cursor = $Items.Count - 1 }
+                            $notice = "Pinned $($item.Name) — never offered again  (undo: winup -Unpin $($item.Id))"
+                            Clear-Host   # the list shrank; full repaint so no stale bottom row lingers
+                        } else {
+                            $notice = "Pin failed for $($item.Name) (winget exit $exit)"
+                        }
+                    }
                 }
             }
+            if ($emptied) { break }
             if ($key.Key -eq 'Enter' -or $key.Key -eq 'Escape' -or [char]::ToLower($key.KeyChar) -eq 'q') { break }
         }
     }
@@ -486,7 +743,7 @@ function Show-InteractiveSelector {
         Clear-Host
     }
 
-    if ($cancelled) { return @() }
+    if ($cancelled -or $emptied) { return @() }
     $result = for ($i = 0; $i -lt $Items.Count; $i++) {
         if ($selected[$i]) { $Items[$i] }
     }
@@ -500,7 +757,13 @@ function Select-Packages {
     return Show-InteractiveSelector -Items $Packages -Title "Select packages to upgrade  ·  source: $script:ListingChannel"
 }
 
+# Pins made with the P key are collected here and logged after the picker exits
+# — Write-Log prints to the console, which would repaint over the selector UI.
+$script:PinnedInPicker = @()
 $chosen = @(Select-Packages -Packages $packages)
+foreach ($p in $script:PinnedInPicker) {
+    Write-Log ("Pinned from picker: {0} ({1}) — never offered again. Undo: winup -Unpin {1}" -f $p.Name, $p.Id) -Level OK
+}
 if (-not $chosen -or $chosen.Count -eq 0) {
     Write-Log 'No packages selected. Exiting.' -Level INFO
     exit 0

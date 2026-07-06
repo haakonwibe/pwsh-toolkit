@@ -15,9 +15,14 @@ $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'WingetUpgrade/Invoke-WingetUpgrade.ps1'
 $ast  = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$null, [ref]$null)
-$want = 'Get-WingetUpgrades', 'Get-WingetUpgradeObject', 'Initialize-WinGetModule', 'Test-WingetLocalizedCulture'
+$want = 'Get-WingetUpgrades', 'Get-WingetUpgradeObject', 'Initialize-WinGetModule', 'Test-WingetLocalizedCulture',
+        'Get-PinMirror', 'Save-PinMirror'
 $defs = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $want -contains $n.Name }, $true)
 foreach ($d in $defs) { . ([scriptblock]::Create($d.Extent.Text)) }
+
+# Isolated pin-mirror store: Get-WingetUpgradeObject reads it on every listing,
+# so it must exist as a variable and point away from the real %LOCALAPPDATA% one.
+$script:PinMirrorFile = Join-Path ([IO.Path]::GetTempPath()) ("winup-harness-" + [Guid]::NewGuid().ToString('N') + '.json')
 
 # ---- Stubbed dependencies (named to shadow the real cmdlets the extracted
 #      functions call; toggled via the $script: switches below) ---------------
@@ -82,6 +87,24 @@ $r = @(Get-WingetUpgrades)
 Check 'pinned Git.Git dropped; only PowerShell remains' (($r.Count -eq 1) -and ($r[0].Id -eq 'Microsoft.PowerShell'))
 $script:pinnedSet = @()
 
+Write-Host "`nA3) winup pin-mirror exclusion (plain pin, module path)" -ForegroundColor Cyan
+$script:moduleInstalled = $true; $script:logged.Clear()
+Save-PinMirror -Entry @([pscustomobject]@{ Id = 'Git.Git'; Gate = ''; Blocking = $false })
+$r = @(Get-WingetUpgrades)
+Check 'mirror-pinned Git.Git dropped' (($r.Count -eq 1) -and ($r[0].Id -eq 'Microsoft.PowerShell'))
+
+Write-Host "`nA4) gated pin offers the newest IN-GATE version" -ForegroundColor Cyan
+Save-PinMirror -Entry @([pscustomobject]@{ Id = 'Git.Git'; Gate = '2.45.0'; Blocking = $false })
+$r = @(Get-WingetUpgrades)
+$git = $r | Where-Object Id -eq 'Git.Git'
+Check 'still listed, with the in-gate version (2.45.0, not 2.45.1)' (($r.Count -eq 2) -and ($git.Available -eq '2.45.0'))
+
+Write-Host "`nA5) gate with nothing in range hides the package" -ForegroundColor Cyan
+Save-PinMirror -Entry @([pscustomobject]@{ Id = 'Git.Git'; Gate = '3.*'; Blocking = $false })
+$r = @(Get-WingetUpgrades)
+Check 'no in-gate upgrade -> dropped' (($r.Count -eq 1) -and ($r[0].Id -eq 'Microsoft.PowerShell'))
+Save-PinMirror -Entry @()   # reset the mirror for the sections below
+
 Write-Host "`nB) module not installed -> text fallback" -ForegroundColor Cyan
 $script:moduleInstalled = $false; $script:logged.Clear()
 $r = @(Get-WingetUpgrades)
@@ -140,6 +163,20 @@ Check 'pt-BR localized'           (Test-WingetLocalizedCulture -Culture 'pt-BR')
 Check 'en-US not localized'       (-not (Test-WingetLocalizedCulture -Culture 'en-US'))
 Check 'nb-NO not localized'       (-not (Test-WingetLocalizedCulture -Culture 'nb-NO'))
 Check 'pt-PT not localized'       (-not (Test-WingetLocalizedCulture -Culture 'pt-PT'))
+
+# ==== Pin mirror read/write (the store behind -Pin / picker P) ==============
+Write-Host "`nG) pin mirror" -ForegroundColor Cyan
+Remove-Item -LiteralPath $script:PinMirrorFile -Force -ErrorAction SilentlyContinue
+Check 'missing file -> empty list' (@(Get-PinMirror).Count -eq 0)
+Save-PinMirror -Entry @([pscustomobject]@{ Id = 'A.B'; Gate = '1.*'; Blocking = $true })
+$m = @(Get-PinMirror)
+Check 'roundtrip keeps Id/Gate/Blocking' (($m.Count -eq 1) -and ($m[0].Id -eq 'A.B') -and ($m[0].Gate -eq '1.*') -and $m[0].Blocking)
+Save-PinMirror -Entry @()
+Check 'empty save -> empty list (not stale)' (@(Get-PinMirror).Count -eq 0)
+Set-Content -LiteralPath $script:PinMirrorFile -Value '{ this is not json ]'
+$script:logged.Clear()
+Check 'corrupt file -> empty + WARN, no throw' ((@(Get-PinMirror).Count -eq 0) -and [bool]($script:logged -match 'pin mirror'))
+Remove-Item -LiteralPath $script:PinMirrorFile -Force -ErrorAction SilentlyContinue
 
 Write-Host "`n==== $($script:pass) passed, $($script:fail) failed ====" -ForegroundColor $(if ($script:fail) { 'Red' } else { 'Green' })
 exit $script:fail
