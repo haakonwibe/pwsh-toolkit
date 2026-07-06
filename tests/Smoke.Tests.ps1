@@ -29,7 +29,7 @@ BeforeAll {
 `$loadErrors = @(`$Error | ForEach-Object { `$_.ToString() })
 
 `$expectedCommands = @(
-    'j','jb','jf','peek','df','winup','tagdl','sortdl','json','Show-Json',
+    'j','jb','jf','peek','df','winup','tagdl','sortdl','json','Show-Json','recent',
     'home','docs','desktop','downloads','onedrive',
     'mkcd','up','..','...',
     'prj',

@@ -18,6 +18,7 @@ Profiles/
 │   ├── Aliases.ps1                    # Quick shortcuts and aliases (winup, tagdl, ask, ...)
 │   ├── DefaultParameters.ps1          # Default parameter values for cmdlets
 │   ├── Navigation.ps1                 # Directory navigation + folder jumper (j/jb/jf)
+│   ├── Recent.ps1                     # Recent-files browser (recent)
 │   ├── Peek.ps1                       # Archive previewer (peek)
 │   ├── Json.ps1                       # JSON viewer with syntax highlighting (json)
 │   ├── SystemUtilities.ps1            # System info and utility functions (df, Get-PubIP, ...)
@@ -118,6 +119,9 @@ OneDrive paths use `$Config.OneDriveOrg` (auto-detected from `$env:OneDriveComme
 - Tab completion: `j <TAB>` cycles destination labels (substring match, path as tooltip); `j -Remove <TAB>` offers only your own bookmarks
 - `j -Add` - Bookmark the current directory (label defaults to the folder's leaf name); `j -Add <path> -Label <name>` bookmarks a specific folder. `j -Remove <label>` drops one. Bookmarks persist to `%LOCALAPPDATA%\pwsh-toolkit\jump-bookmarks.json` and load at every shell start — the no-friction way to add favorites, no file editing. Re-adding a label repoints it; it won't shadow or remove a built-in/config destination
 - Built-in destinations: Home, Downloads, OneDrive, LocalAppData, ProgramData. For favorites, prefer `j -Add`. For version-controlled literals use `config.psd1`'s `ExtraJumpFolders`; for anything needing evaluation (env vars, conditional paths) append in `Machines/<COMPUTERNAME>.ps1`: `$script:JumpFolders += [pscustomobject]@{ Label='VMs'; Path='D:\VMs' }`
+
+**Recent Files:**
+- `recent [n]` - Newest `n` files (default 30) across Downloads + Desktop in the shared picker: age, name, source folder, and the `tagdl` ADS description when present. Enter opens with the default app; `.zip`/`.rar`/`.7z` are handed to `peek` (extract + jump). Add folders per machine: `$script:RecentFolders += 'D:\Scans'` in `Machines/<COMPUTERNAME>.ps1`
 
 **Git Projects:**
 - `prj` - Scrollable picker over git repos found under your `ProjectRoots`, with the current branch shown (read straight from `.git/HEAD`, no `git` subprocess). Up/Down, PgUp/PgDn, Home/End to move, Enter to jump (via `jb`/`jf` history), Esc to cancel; each row has a single-key jump label (`1`-`9` then `a`-`z`, up to 35 items). Built on the shared `Show-Picker` (alternate screen buffer, viewport scrolling for long lists)
