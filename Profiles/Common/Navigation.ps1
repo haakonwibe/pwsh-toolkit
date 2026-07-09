@@ -481,7 +481,11 @@ function j {
     $labelWidth = ($items | ForEach-Object { $_.Label.Length } | Measure-Object -Maximum).Maximum
     $render = {
         param($f)
-        "{0}  {1}" -f $f.Label.PadRight($labelWidth), $f.Path
+        # Your own bookmarks in green so they stand out from the built-ins;
+        # paths recede into dark gray — the label is what you're scanning for.
+        $label = $f.Label.PadRight($labelWidth)
+        if ($f.Source -eq 'user') { $label = "`e[32m$label`e[0m" }
+        "{0}  `e[90m{1}`e[0m" -f $label, $f.Path
     }.GetNewClosure()
 
     $selected = Show-Picker -Items $items -RenderRow $render `

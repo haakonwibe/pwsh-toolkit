@@ -40,7 +40,7 @@ $script:ToolkitInternalCommands = @(
     'Get-PeekRarExe', 'Get-Peek7zExe', 'Get-PeekTool'
     'Test-NativeSudoEnabled', 'Get-SudoExe'
     'Get-ProjectRoot', 'Find-GitProject'
-    'Get-PickerScrollTop', 'Get-PickerHotkey', 'Get-PickerHotkeyIndex', 'Show-Picker'
+    'Get-PickerScrollTop', 'Get-PickerHotkey', 'Get-PickerHotkeyIndex', 'Get-PickerPlainText', 'Show-Picker'
     'Get-PoshThemePool', 'Test-NerdFontInstalled'
     'Get-TerminalSettingsPath', 'Update-FontFaceText'
     'Test-RemoteServersConfigured', 'Invoke-RemoteServerPicker', 'Get-RemoteServerByMatch'

@@ -804,6 +804,32 @@ Describe 'j tab completion' {
     }
 }
 
+Describe 'Get-PickerPlainText (ANSI-aware width math)' {
+
+    It 'strips SGR color sequences, keeping the visible text' {
+        Get-PickerPlainText "`e[32mgreen`e[0m and `e[90mgray`e[0m" | Should -Be 'green and gray'
+    }
+
+    It 'strips multi-parameter sequences (the cursor-bar codes)' {
+        Get-PickerPlainText "`e[30;46mhighlighted`e[0m" | Should -Be 'highlighted'
+    }
+
+    It 'returns plain strings unchanged' {
+        Get-PickerPlainText 'no codes here' | Should -Be 'no codes here'
+    }
+
+    It 'handles empty and null input' {
+        Get-PickerPlainText ''    | Should -Be ''
+        Get-PickerPlainText $null | Should -Be ''
+    }
+
+    It 'visible length drives padding math (colored text is shorter than raw)' {
+        $raw = "`e[33m(main)`e[0m"
+        (Get-PickerPlainText $raw).Length | Should -Be 6
+        $raw.Length                       | Should -BeGreaterThan 6
+    }
+}
+
 Describe 'Get-PickerScrollTop (viewport scrolling math)' {
 
     It 'does not scroll when the cursor is already visible' {

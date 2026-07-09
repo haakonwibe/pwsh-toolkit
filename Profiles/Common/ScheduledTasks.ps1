@@ -234,8 +234,15 @@ function task {
         $nameWidth = [Math]::Min(45, ($tasks | ForEach-Object { $_.TaskName.Length } | Measure-Object -Maximum).Maximum)
         $render = {
             param($t)
-            $sub = if ($t.TaskPath -and $t.TaskPath -ne '\') { $t.TaskPath } else { '' }
-            '{0}  {1,-8}  {2}' -f $t.TaskName.PadRight($nameWidth), $t.State, $sub
+            $sub   = if ($t.TaskPath -and $t.TaskPath -ne '\') { $t.TaskPath } else { '' }
+            # State at a glance: Running cyan, Ready green, Disabled dark gray.
+            $state = '{0,-8}' -f $t.State
+            switch ([string]$t.State) {
+                'Running'  { $state = "`e[36m$state`e[0m" }
+                'Ready'    { $state = "`e[32m$state`e[0m" }
+                'Disabled' { $state = "`e[90m$state`e[0m" }
+            }
+            "{0}  {1}  `e[90m{2}`e[0m" -f $t.TaskName.PadRight($nameWidth), $state, $sub
         }.GetNewClosure()
 
         $sel = Show-Picker -Items $tasks -RenderRow $render `
