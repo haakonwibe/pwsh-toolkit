@@ -136,8 +136,9 @@ function prj {
     # doesn't need the width arg it's passed (it lands in $args, ignored).
     $render = {
         param($p)
-        $branch = if ($p.Branch) { "  ($($p.Branch))" } else { '' }
-        "{0}{1}  {2}" -f $p.Label.PadRight($labelWidth), $branch, $p.Path
+        # Branch in yellow (the git accent), path in dark gray under the label.
+        $branch = if ($p.Branch) { "  `e[33m($($p.Branch))`e[0m" } else { '' }
+        "{0}{1}  `e[90m{2}`e[0m" -f $p.Label.PadRight($labelWidth), $branch, $p.Path
     }.GetNewClosure()
 
     $selected = Show-Picker -Items $projects -RenderRow $render `

@@ -204,7 +204,8 @@ function Set-PoshTheme {
         # Picker: a Random pseudo-entry first, then every theme by name.
         $items  = @([pscustomobject]@{ Name = 'Random'; File = $null }) +
                   ($pool | ForEach-Object { [pscustomobject]@{ Name = ($_.BaseName -replace '\.omp$', ''); File = $_ } })
-        $render = { param($t) $t.Name }
+        # The Random pseudo-entry in cyan so it reads as an action, not a theme.
+        $render = { param($t) if ($t.File) { $t.Name } else { "`e[36m$($t.Name)`e[0m" } }
         $sel = Show-Picker -Items $items -RenderRow $render -Title 'Oh My Posh themes' `
             -Hint 'Up/Down + Enter  PgUp/PgDn  Esc cancel  |  applies on select'
         if (-not $sel) { return }

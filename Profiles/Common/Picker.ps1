@@ -71,6 +71,22 @@ function Get-PickerHotkeyIndex {
     return -1
 }
 
+function Get-PickerPlainText {
+    <#
+    .SYNOPSIS
+        Strip ANSI SGR color sequences from a string.
+    .DESCRIPTION
+        Row bodies may carry `e[..m color codes; padding, truncation, and the
+        cursor-row highlight must all work on the VISIBLE text, not the raw
+        string. Pulled out as a pure function so the width math is unit-testable
+        without a console.
+    #>
+    [OutputType([string])]
+    param([string] $Text)
+    if (-not $Text) { return '' }
+    return ($Text -replace "`e\[[0-9;]*m", '')
+}
+
 function Show-Picker {
     <#
     .SYNOPSIS
@@ -85,6 +101,9 @@ function Show-Picker {
     .PARAMETER RenderRow
         Scriptblock ($item, [int]$width) -> string producing the row body.
         Use .GetNewClosure() if it references caller variables (e.g. a column width).
+        The body may embed ANSI color codes (`e[..m): the picker pads and
+        truncates by visible width, and strips codes on the cursor row so the
+        highlight bar stays uniform.
     .PARAMETER Title
         Header line shown at the top.
     .PARAMETER Hint
@@ -128,14 +147,26 @@ function Show-Picker {
                 $marker   = if ($isCursor) { '>' } else { ' ' }
                 $numKey   = Get-PickerHotkey $i
                 if (-not $numKey) { $numKey = ' ' }
-                $body     = [string](& $RenderRow $Items[$i] ($winW - 7))
-                $line     = "  {0} {1}  {2}" -f $marker, $numKey, $body
-                if ($line.Length -gt $winW) { $line = $line.Substring(0, $winW) }
-                $line = $line.PadRight($winW)
+                $body      = [string](& $RenderRow $Items[$i] ($winW - 7))
+                $plainBody = Get-PickerPlainText $body
+
                 if ($isCursor) {
-                    [void]$sb.AppendLine("$esc[30;46m$line$esc[0m")   # black on cyan
+                    # The highlight bar owns this row's colors: render the body
+                    # stripped, or embedded codes would break out of the bar.
+                    $line = "  {0} {1}  {2}" -f $marker, $numKey, $plainBody
+                    if ($line.Length -gt $winW) { $line = $line.Substring(0, $winW) }
+                    [void]$sb.AppendLine("$esc[30;46m$($line.PadRight($winW))$esc[0m")   # black on cyan
                 } else {
-                    [void]$sb.AppendLine($line)
+                    # Pad by VISIBLE width (the gutter "  > k  " is 7 columns).
+                    # An overflowing row falls back to stripped text — truncating
+                    # mid-escape would leak a broken sequence into the frame.
+                    $visible = 7 + $plainBody.Length
+                    if ($visible -gt $winW) {
+                        [void]$sb.AppendLine(("  {0} {1}  {2}" -f $marker, $numKey, $plainBody).Substring(0, $winW))
+                    } else {
+                        $prefix = "  {0} $esc[36m{1}$esc[0m  " -f $marker, $numKey   # hotkey column in cyan
+                        [void]$sb.AppendLine("$prefix$body$esc[0m" + ''.PadRight($winW - $visible))
+                    }
                 }
             }
 

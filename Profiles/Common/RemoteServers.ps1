@@ -53,8 +53,9 @@ function Invoke-RemoteServerPicker {
     $labelWidth = ($Servers | ForEach-Object { $_.Label.Length } | Measure-Object -Maximum).Maximum
     $render = {
         param($s)
-        $userTag = if ($s.User) { "  as $($s.User)" } else { '' }
-        "{0}  {1}{2}" -f $s.Label.PadRight($labelWidth), $s.Address, $userTag
+        # Address recedes to dark gray; a non-default user is worth noticing.
+        $userTag = if ($s.User) { "  `e[33mas $($s.User)`e[0m" } else { '' }
+        "{0}  `e[90m{1}`e[0m{2}" -f $s.Label.PadRight($labelWidth), $s.Address, $userTag
     }.GetNewClosure()
 
     return Show-Picker -Items $Servers -RenderRow $render `

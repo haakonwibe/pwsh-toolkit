@@ -103,8 +103,17 @@ function recent {
     $render = {
         param($i)
         $name = if ($i.Name.Length -gt $nameWidth) { $i.Name.Substring(0, $nameWidth - 1) + [char]0x2026 } else { $i.Name.PadRight($nameWidth) }
+        # Age color = freshness: under an hour green, today yellow, this month
+        # default, older fades to dark gray (matching its dated fallback text).
+        $age = '{0,5}' -f $i.Age
+        switch -Regex ($i.Age) {
+            '^(now|\d+m)$' { $age = "`e[32m$age`e[0m" }
+            '^\d+h$'       { $age = "`e[33m$age`e[0m" }
+            '^\d+d$'       { }
+            default        { $age = "`e[90m$age`e[0m" }
+        }
         $tail = if ($i.Desc) { "$($i.Where)  · $($i.Desc)" } else { $i.Where }
-        '{0,5}  {1}  {2}' -f $i.Age, $name, $tail
+        "{0}  {1}  `e[90m{2}`e[0m" -f $age, $name, $tail
     }.GetNewClosure()
 
     $selected = Show-Picker -Items $items -RenderRow $render `
