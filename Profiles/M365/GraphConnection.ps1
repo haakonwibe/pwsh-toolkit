@@ -97,11 +97,21 @@ function Connect-Tenant {
     Write-Host "Connecting to Microsoft Graph ($Access scopes)..." -ForegroundColor Cyan
 
     try {
-        Connect-MgGraph -Scopes $scopes -NoWelcome
-        Write-Host "✅ Microsoft Graph connected ($Access)" -ForegroundColor Green
+        # -ErrorAction Stop: Connect-MgGraph surfaces auth failures as
+        # NON-terminating errors, which try/catch ignores. Without this the
+        # function marches past the failure and prints a false "connected"
+        # banner over an empty context.
+        Connect-MgGraph -Scopes $scopes -NoWelcome -ErrorAction Stop
 
-        # Show current context
+        # Belt-and-suspenders: even a "successful" call should leave a context
+        # with an account. If not, treat it as a failure rather than reporting
+        # a connection that isn't there.
         $context = Get-MgContext
+        if (-not $context -or -not $context.Account) {
+            throw "Connect-MgGraph returned no active context."
+        }
+
+        Write-Host "✅ Microsoft Graph connected ($Access)" -ForegroundColor Green
         Write-Host "Tenant: $($context.TenantId)" -ForegroundColor Yellow
         Write-Host "Account: $($context.Account)" -ForegroundColor Yellow
         if ($Access -eq 'ReadOnly') {
