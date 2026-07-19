@@ -13,6 +13,7 @@
 # basename; anything under M365/ is grouped as 'Microsoft 365'.
 $script:ToolkitGroups = [ordered]@{
     'Aliases'             = 'Shell & quick commands'
+    'Clipboard'           = 'Shell & quick commands'
     'Navigation'          = 'Navigation'
     'Recent'              = 'Navigation'
     'Projects'            = 'Git projects'
@@ -37,6 +38,7 @@ $script:ToolkitInternalCommands = @(
     'Get-JumpBookmark', 'Save-JumpBookmark', 'Sync-JumpBookmark', 'Add-JumpBookmark', 'Remove-JumpBookmark'
     'Get-MgGraphAllPage'
     'Get-RecentFile', 'Format-FileAge', 'Get-FileDizDescription'
+    'Convert-SnippetDate', 'ConvertTo-SnippetStamp', 'Format-SnippetPreview', 'Get-ClipSnippet', 'Save-ClipSnippet', 'Limit-ClipSnippet', 'Add-ClipSnippet', 'Remove-ClipSnippet'
     'Get-PeekRarExe', 'Get-Peek7zExe', 'Get-PeekTool'
     'Test-NativeSudoEnabled', 'Get-SudoExe'
     'Get-ProjectRoot', 'Find-GitProject'

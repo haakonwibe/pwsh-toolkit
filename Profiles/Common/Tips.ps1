@@ -7,6 +7,7 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'jb / jf  —  browser-style back/forward through visited folders';                            E = 'Try: jb   (works after any cd or j to retrace your steps)' }
     [pscustomobject]@{ H = 'j -Add  —  bookmark the current folder for the jumper, no config editing';                  E = 'Try: j -Add   (also: j -Add D:\VMs -Label vms, then j vms; j -Remove vms)' }
     [pscustomobject]@{ H = 'recent  —  newest files across Downloads + Desktop in one picker';                          E = 'Try: recent   (Enter opens; archives peek; also: recent 50)' }
+    [pscustomobject]@{ H = 'cb  —  stash of text you paste often; picker copies it back to the clipboard';               E = 'Try: cb -Add -Label sig   (then: cb sig, or just cb for the picker)' }
     [pscustomobject]@{ H = 'prj  —  jump to a git repo (picker, or prj <name>); scans your ProjectRoots';             E = 'Try: prj   (also: prj toolkit, prj -Refresh after cloning)' }
     [pscustomobject]@{ H = 'peek <archive>  —  extract any archive to a temp folder and jump there';                    E = 'Try: peek installer.zip   (also: peek -List, peek -Active, peek -Clean)' }
     [pscustomobject]@{ H = 'df  —  disk free overview with colored usage bars (green / yellow / red)';                  E = 'Try: df   (also: df -All for removable, network, and CD-ROM drives)' }

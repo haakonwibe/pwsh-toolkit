@@ -107,7 +107,40 @@ examples), keep titles under 70 chars, write "why" not "what".
 
 ---
 
-## 4. Clipboard history picker (`cb`)
+## 4. Clipboard snippet stash (`cb`) — 🔨 Building
+
+Built in `Profiles/Common/Clipboard.ps1`. Reframed from "clipboard history" to a
+**curated snippet stash** — the sharper tool, and the one Win+V can't be. A pure
+manual stash of raw clipboard entries has a hole: to catch something you'd have
+to run `cb` right after copying and before the next copy, which is exactly the
+moment history is meant to save you from. Win+V already covers chronological
+recent-copy recovery; the gap it *can't* fill is durable, named,
+fuzzy-searchable snippets that survive reboots. So `cb` is "`j` bookmarks, but
+for text." Resolved open questions:
+
+- **Capture model → manual add, option (a).** Rejected the background watcher
+  (b): the "spy on my clipboard" discomfort is real and a poller captures every
+  password a manager copies straight to plaintext on disk. Win+V covers (c)'s
+  "recover my last few copies" already.
+- **Storage → plaintext JSON**, `%LOCALAPPDATA%\pwsh-toolkit\clipboard-snippets.json`
+  — the `jump-bookmarks.json` pattern (Get/Save helpers, tolerant read,
+  -ThrowOnError before a rewrite). No DPAPI in v1: curating what goes in already
+  removes the accidental-password risk a watcher would have; the docs point
+  passwords/tokens at SecretStore instead. A `-Secret` DPAPI mode is a clean
+  later addition if wanted.
+- **Naming → optional labels.** `cb -Add -Label sig` names a snippet (upsert by
+  label, like `j -Add`); unlabeled entries show by their first line. `cb <text>`
+  and `cb -Remove <text>` match label OR content substring, so unlabeled
+  snippets are still reachable and removable without a picker delete key.
+- **Trim → cap 100, drop oldest UNLABELED first**; labeled favorites are never
+  auto-dropped. Identical text upserts (bumps to top) instead of duplicating.
+- **Picker → `Show-Picker` unchanged.** Rows show age + label/preview + an
+  `(N lines)` marker for multi-line blobs. No side preview pane — that would
+  require modifying `Show-Picker`, breaking the "every consumer uses the picker
+  untouched" property `prj`/`recent`/`rdp` all keep. Enter copies to the
+  clipboard (reliable auto-paste isn't possible from the alt-screen buffer).
+
+Kept below for the design record.
 
 **What:** A small picker over recent clipboard entries. Win+V exists but can't
 fuzzy-search, and clears between reboots.

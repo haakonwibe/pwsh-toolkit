@@ -9,6 +9,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `cb` — a curated clipboard snippet stash (IDEAS.md #4, reframed from "clipboard history"). The durable text you paste often — signature, address, a gnarly command — named and fuzzy-searchable, surviving reboots: the thing Win+V can't be, rather than a worse copy of it. `cb -Add -Label sig` stashes the current clipboard under a name (upsert by label; identical text de-dupes and bumps to the top); `cb` opens the shared picker and Enter copies the selection back to the clipboard (reliable auto-paste isn't possible from the alternate screen buffer, so you Ctrl+V it yourself, same as Win+V); `cb <text>` copies the first label/content match without the picker; `cb -Remove <text>` drops one by label or content, so unlabeled snippets are reachable too. Snippets persist as plaintext JSON under `%LOCALAPPDATA%\pwsh-toolkit\clipboard-snippets.json` (the `j`-bookmark pattern), capped at 100 with oldest *unlabeled* entries trimmed first — labeled favorites are never auto-dropped. Deliberately not a background clipboard watcher and not a secret store: keep passwords and tokens in SecretStore (`Set-Secret` / `Get-OrCreateSecret`). `cb <TAB>` and `cb -Remove <TAB>` complete snippet labels with the preview as the tooltip.
+
+### Fixed
+
+- `Connect-Tenant` no longer prints a false "✅ Microsoft Graph connected" banner over an empty session when the sign-in fails. `Connect-MgGraph` surfaces authentication failures (a cancelled browser prompt, a Conditional Access block, a port-binding failure) as *non-terminating* errors, so the wrapper's `try/catch` never fired and execution fell through to the success message with a blank `Tenant:`/`Account:`. It now passes `-ErrorAction Stop` so a failed connection is caught and reported with the real reason, plus a guard that treats a missing context/account as a failure.
+
 ## [0.5.0] - 2026-07-09
 
 ### Added

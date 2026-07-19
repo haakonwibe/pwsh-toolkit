@@ -33,6 +33,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Aliases.ps1')        # touch, which, ll, la, ask
     . (Join-Path $commonDir 'Navigation.ps1')     # mkcd, up
     . (Join-Path $commonDir 'Recent.ps1')         # Get-RecentFile, Format-FileAge (needs Navigation's $script:OneDrivePath)
+    . (Join-Path $commonDir 'Clipboard.ps1')      # cb + snippet helpers (renders age via Recent's Format-FileAge)
     . (Join-Path $commonDir 'Peek.ps1')           # Get-PeekTool + exe finders
     . (Join-Path $commonDir 'RemoteServers.ps1')  # Format-RemoteServerDisplay, Get-RemoteServerByMatch
     . (Join-Path $commonDir 'Picker.ps1')         # Get-PickerScrollTop
@@ -753,6 +754,210 @@ Describe 'j bookmarks (-Add / -Remove)' {
     It 'appends user bookmarks after existing entries (never shadows in first-match)' {
         j -Add $bmdir -Label zzz-last 6>$null
         (@($script:JumpFolders).Label)[-1] | Should -Be 'zzz-last'
+    }
+}
+
+Describe 'Format-SnippetPreview' {
+
+    It 'takes the first non-blank line' {
+        Format-SnippetPreview "  `n`nfirst real line`nsecond" | Should -Be 'first real line'
+    }
+
+    It 'collapses inner whitespace runs to single spaces' {
+        Format-SnippetPreview "a`t`tb    c" | Should -Be 'a b c'
+    }
+
+    It 'returns empty for null/whitespace' {
+        Format-SnippetPreview '' | Should -Be ''
+        Format-SnippetPreview "   `n  " | Should -Be ''
+    }
+}
+
+Describe 'Limit-ClipSnippet (trim policy)' {
+
+    BeforeAll {
+        # Build a snippet with a monotonic timestamp (higher index = newer), some
+        # labeled. Defined in BeforeAll, not the Describe body, so it survives
+        # Pester's discovery→run boundary and is visible to the It blocks.
+        function New-Snip {
+            param([int] $Index, [string] $Label)
+            [pscustomobject]@{
+                Label = $Label
+                Text  = "text-$Index"
+                Added = (Get-Date).AddMinutes($Index).ToString('o')
+            }
+        }
+    }
+
+    It 'keeps everything when under the cap, newest first' {
+        $s = @(New-Snip 1; New-Snip 2; New-Snip 3)
+        $r = @(Limit-ClipSnippet -Snippet $s -Max 100)
+        $r.Count     | Should -Be 3
+        $r[0].Text   | Should -Be 'text-3'   # newest first
+        $r[-1].Text  | Should -Be 'text-1'
+    }
+
+    It 'drops the oldest UNLABELED entries past the cap' {
+        $s = @(1..5 | ForEach-Object { New-Snip $_ })   # all unlabeled, 1 oldest .. 5 newest
+        $r = @(Limit-ClipSnippet -Snippet $s -Max 3)
+        $r.Count            | Should -Be 3
+        @($r.Text)          | Should -Be @('text-5', 'text-4', 'text-3')   # kept newest 3
+    }
+
+    It 'never drops labeled favorites, even past the cap' {
+        # Two labeled (old) + three unlabeled (newer); cap 3 must keep both labels.
+        $s = @(
+            (New-Snip 1 'keep-a'), (New-Snip 2 'keep-b'),
+            (New-Snip 3), (New-Snip 4), (New-Snip 5)
+        )
+        $r = @(Limit-ClipSnippet -Snippet $s -Max 3)
+        @($r | Where-Object Label).Label | Should -Be @('keep-b', 'keep-a')  # both survive (newest-first)
+        $r.Count | Should -Be 3                                              # labels + newest 1 unlabeled
+        @($r | Where-Object { -not $_.Label }).Text | Should -Be @('text-5')
+    }
+}
+
+Describe 'cb snippet stash (-Add / -Remove / lookup)' {
+
+    BeforeEach {
+        # Isolate the store to a temp file so the dev's real snippets are untouched.
+        $script:savedClipFile   = $script:ClipSnippetFile
+        $script:ClipSnippetFile = Join-Path ([IO.Path]::GetTempPath()) ("cb-ut-" + [Guid]::NewGuid().ToString('N') + '.json')
+    }
+    AfterEach {
+        Remove-Item -LiteralPath $script:ClipSnippetFile -Force -ErrorAction SilentlyContinue
+        $script:ClipSnippetFile = $script:savedClipFile
+    }
+
+    It 'saves a labeled snippet' {
+        Add-ClipSnippet -Text 'my signature' -Label sig 6>$null
+        $hit = @(Get-ClipSnippet | Where-Object Label -EQ 'sig')
+        $hit.Count   | Should -Be 1
+        $hit[0].Text | Should -Be 'my signature'
+    }
+
+    It 're-using a label repoints it (upsert, no duplicate)' {
+        Add-ClipSnippet -Text 'v1' -Label sig 6>$null
+        Add-ClipSnippet -Text 'v2' -Label sig 6>$null
+        $hit = @(Get-ClipSnippet | Where-Object Label -EQ 'sig')
+        $hit.Count   | Should -Be 1
+        $hit[0].Text | Should -Be 'v2'
+    }
+
+    It 'dedupes identical text instead of storing it twice' {
+        Add-ClipSnippet -Text 'same words' 6>$null
+        Add-ClipSnippet -Text 'same words' 6>$null
+        @(Get-ClipSnippet | Where-Object Text -EQ 'same words').Count | Should -Be 1
+    }
+
+    It 'does not save empty/whitespace clipboard text' {
+        Add-ClipSnippet -Text "   `n  " 6>$null
+        @(Get-ClipSnippet).Count | Should -Be 0
+    }
+
+    It 'removes a snippet by label' {
+        Add-ClipSnippet -Text 'x' -Label gone 6>$null
+        Remove-ClipSnippet -Name gone 6>$null
+        @(Get-ClipSnippet).Label | Should -Not -Contain 'gone'
+    }
+
+    It 'removes an UNLABELED snippet by content substring' {
+        Add-ClipSnippet -Text 'the quick brown fox' 6>$null
+        Remove-ClipSnippet -Name brown 6>$null
+        @(Get-ClipSnippet).Count | Should -Be 0
+    }
+
+    It 'does not throw when removing an unknown snippet' {
+        { Remove-ClipSnippet -Name nope 6>$null } | Should -Not -Throw
+    }
+
+    It 'stores a single snippet as a JSON array (stable on-disk shape)' {
+        Add-ClipSnippet -Text 'solo' -Label one 6>$null
+        $raw = Get-Content -Raw -LiteralPath $script:ClipSnippetFile
+        $raw.TrimStart()[0]              | Should -Be '['
+        @($raw | ConvertFrom-Json).Count | Should -Be 1
+    }
+
+    It 'refuses to overwrite an unreadable store on -Add (no-clobber guard)' {
+        Set-Content -LiteralPath $script:ClipSnippetFile -Value '{ this is not json ]'
+        Add-ClipSnippet -Text 'newone' -Label n 6>$null
+        Get-Content -Raw -LiteralPath $script:ClipSnippetFile | Should -Match 'this is not json'
+    }
+
+    It 'tolerates a corrupt store on read (empty list, no throw)' {
+        Set-Content -LiteralPath $script:ClipSnippetFile -Value 'not json at all'
+        @(Get-ClipSnippet 3>$null).Count | Should -Be 0
+    }
+
+    It 'copies the first label/content match to the clipboard via cb <text>' {
+        Add-ClipSnippet -Text 'you@example.com' -Label email 6>$null
+        cb email 6>$null
+        Get-Clipboard -Raw | Should -Be 'you@example.com'
+    }
+
+    It 'gives usage help instead of stalling when -Label is used without -Add' {
+        { cb -Label orphan 6>$null } | Should -Not -Throw
+        @(Get-ClipSnippet).Count | Should -Be 0
+    }
+
+    It 'keeps timestamps invariant-ISO across a read/save cycle under a comma-decimal culture' {
+        # Regression: ConvertFrom-Json rehydrates our stored ISO stamp as a
+        # [datetime]; a culture-formatted re-serialize (e.g. nb-NO "19.07.2026")
+        # would then be unparseable and sort as MinValue. Run the whole cycle
+        # under nb-NO to prove the stamp stays invariant ISO regardless.
+        $orig = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = [cultureinfo]'nb-NO'
+            Add-ClipSnippet -Text 'first'  -Label a 6>$null    # write
+            Add-ClipSnippet -Text 'second' -Label b 6>$null    # read-back + re-save
+            $raw = Get-Content -Raw -LiteralPath $script:ClipSnippetFile
+            # Every Added value is ISO 8601 (yyyy-MM-ddT...), never dd.MM.yyyy.
+            @([regex]::Matches($raw, '"Added":\s*"([^"]+)"') | ForEach-Object { $_.Groups[1].Value }) |
+                ForEach-Object { $_ | Should -Match '^\d{4}-\d{2}-\d{2}T' }
+            # And they still parse (not MinValue) so ordering/age survive.
+            @(Get-ClipSnippet | ForEach-Object { Convert-SnippetDate $_.Added }) |
+                ForEach-Object { $_ | Should -BeGreaterThan ([datetime]::MinValue) }
+        } finally {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = $orig
+        }
+    }
+}
+
+Describe 'cb tab completion' {
+
+    BeforeEach {
+        $script:savedClipFile   = $script:ClipSnippetFile
+        $script:ClipSnippetFile = Join-Path ([IO.Path]::GetTempPath()) ("cbtc-ut-" + [Guid]::NewGuid().ToString('N') + '.json')
+        Add-ClipSnippet -Text 'my signature block' -Label sig 6>$null
+        Add-ClipSnippet -Text '123 Example St'     -Label 'home addr' 6>$null
+        Add-ClipSnippet -Text 'an unlabeled blob'  6>$null   # no label -> not completed
+    }
+    AfterEach {
+        Remove-Item -LiteralPath $script:ClipSnippetFile -Force -ErrorAction SilentlyContinue
+        $script:ClipSnippetFile = $script:savedClipFile
+    }
+
+    It 'offers only labeled snippets on an empty word' {
+        $r = @(& $script:ClipLabelCompleter 'cb' 'Match' '' $null @{})
+        $r.Count           | Should -Be 2
+        $r.ListItemText    | Should -Contain 'sig'
+        $r.ListItemText    | Should -Contain 'home addr'
+    }
+
+    It 'matches labels by substring' {
+        (& $script:ClipLabelCompleter 'cb' 'Match' 'addr' $null @{}).ListItemText | Should -Be 'home addr'
+    }
+
+    It 'shows the snippet preview as the tooltip' {
+        (& $script:ClipLabelCompleter 'cb' 'Match' 'sig' $null @{}).ToolTip | Should -Be 'my signature block'
+    }
+
+    It 'quotes labels containing spaces so they bind as one argument' {
+        (& $script:ClipLabelCompleter 'cb' 'Name' 'home' $null @{}).CompletionText | Should -Be "'home addr'"
+    }
+
+    It 'does not throw on wildcard metacharacters in the word' {
+        { & $script:ClipLabelCompleter 'cb' 'Match' '[' $null @{} } | Should -Not -Throw
     }
 }
 
