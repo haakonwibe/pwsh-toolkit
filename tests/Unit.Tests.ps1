@@ -46,6 +46,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Json.ps1')            # Show-Json + Format-JsonColor
     . (Join-Path $commonDir 'ScheduledTasks.ps1')  # Format-TaskResult, Test-ToolkitTaskVisible
     . (Join-Path $repoRoot 'Profiles/M365/IntuneManagement.ps1')  # Get-ComplianceBucket, ConvertTo-IntuneDashboardHtml (defining these needs no Graph)
+    . (Join-Path $repoRoot 'Profiles/M365/IntuneWin32Apps.ps1')   # Get-IntuneWin32App, Get-IntuneWin32AppContentInfo (mocked below)
 }
 
 Describe 'touch' {
@@ -1121,6 +1122,73 @@ Describe 'Get-IntuneOverviewData (mocked Graph)' {
         Mock Get-MgContext { [pscustomobject]@{ Account = $null; TenantId = 'tid-guid' } }
         Mock Invoke-MgGraphRequest { @{ value = @() } }
         (Get-IntuneOverviewData).Tenant | Should -Be 'tid-guid'
+    }
+}
+
+Describe 'Intune Win32 app content info (mocked Graph)' {
+
+    BeforeAll {
+        # Same stub-then-mock pattern as the overview-data suite above.
+        function Invoke-MgGraphRequest { param($Method, $Uri, $ErrorAction) throw "stub not mocked: $Method $Uri (ErrorAction=$ErrorAction)" }
+        function Get-MgContext { }
+
+        Mock Get-MgContext { [pscustomobject]@{ TenantId = 'tid' } }
+        Mock Invoke-MgGraphRequest {
+            # PowerShell switch runs EVERY matching case — these wildcard
+            # patterns overlap (a files URI also matches '*contentVersions*'
+            # and '*mobileApps/a1*'), so each case must break.
+            switch -Wildcard ($Uri) {
+                '*contentVersions/1/files*' { @{ value = @(
+                    @{ name = 'old.intunewin'; size = 1MB; sizeEncrypted = 1.1MB; uploadState = 'commitFileSuccess'; isCommitted = $true; createdDateTime = '2026-05-01' }
+                ) }; break }
+                '*contentVersions/2/files*' { @{ value = @(
+                    @{ name = 'IntunePackage.intunewin'; size = 2MB; sizeEncrypted = 2.2MB; uploadState = 'commitFileSuccess'; isCommitted = $true; createdDateTime = '2026-07-01' }
+                ) }; break }
+                '*contentVersions*'         { @{ value = @(@{ id = '1' }, @{ id = '2' }) }; break }
+                '*mobileApps/a1*'           { @{ id = 'a1'; displayName = '7-Zip'; committedContentVersion = '2' }; break }
+                '*mobileApps?*'             { @{ value = @(
+                    @{ id = 'a1'; displayName = '7-Zip';        publisher = 'Igor Pavlov'; displayVersion = '24.08'; fileName = '7z.intunewin';     size = 2MB;   committedContentVersion = '2'; lastModifiedDateTime = '2026-07-01' }
+                    @{ id = 'a2'; displayName = 'Adobe Reader'; publisher = 'Adobe';       displayVersion = '25.1';  fileName = 'reader.intunewin'; size = 300MB; committedContentVersion = '1'; lastModifiedDateTime = '2026-06-15' }
+                ) }; break }
+            }
+        }
+    }
+
+    It 'shapes the Win32 inventory with content-relevant fields' {
+        $apps = @(Get-IntuneWin32App)
+        $apps.Count | Should -Be 2
+        $apps[0].SizeMB | Should -Be 2
+        $apps[0].CommittedContentVersion | Should -Be '2'
+    }
+
+    It 'filters by display-name substring, case-insensitively' {
+        @(Get-IntuneWin32App -Name 'reader').DisplayName | Should -Be 'Adobe Reader'
+    }
+
+    It 'expands only the committed content version by default' {
+        $rows = @(Get-IntuneWin32AppContentInfo -Id 'a1')
+        $rows.Count | Should -Be 1
+        $rows[0].ContentVersion | Should -Be '2'
+        $rows[0].IsCommittedVersion | Should -BeTrue
+        $rows[0].EncryptedSizeMB | Should -Be 2.2
+    }
+
+    It 'walks every version with -AllVersions, exposing stale uploads' {
+        $rows = @(Get-IntuneWin32AppContentInfo -Id 'a1' -AllVersions)
+        $rows.Count | Should -Be 2
+        @($rows | Where-Object IsCommittedVersion -EQ $false).FileName | Should -Be 'old.intunewin'
+    }
+
+    It 'accepts app ids from the pipeline by property name' {
+        $rows = @(Get-IntuneWin32App -Name '7-zip' | Get-IntuneWin32AppContentInfo)
+        $rows.Count | Should -Be 1
+        $rows[0].AppId | Should -Be 'a1'
+    }
+
+    It 'warns instead of throwing when not connected' {
+        Mock Get-MgContext { $null }
+        $rows = @(Get-IntuneWin32App 3>$null)
+        $rows | Should -BeNullOrEmpty
     }
 }
 

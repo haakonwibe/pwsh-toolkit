@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 > The detailed pre-release history (0.1.0–0.1.62) was condensed into the summary
 > below when the repository was squashed for its public release.
 
+## [Unreleased]
+
+### Added
+
+- `Get-IntuneWin32App` / `Get-IntuneWin32AppContentInfo` — read-only visibility into Intune Win32 app content the portal doesn't surface (IDEAS.md #7, seeded in-toolkit rather than as a separate module). The inventory shows each Win32 app's package file, size, and committed content version; the content command expands that version's actual delivery files with real vs. encrypted sizes and upload state, and `-AllVersions` walks the full version history — where orphaned, never-committed upload attempts become visible. Same plumbing as the rest of `M365/` (`Invoke-MgGraphRequest` + the shared paging helper, `/beta` endpoints, no extra modules); covered by Connect-Tenant's default ReadOnly tier, and the two commands pipe together.
+
 ## [0.6.0] - 2026-07-21
 
 ### Added
