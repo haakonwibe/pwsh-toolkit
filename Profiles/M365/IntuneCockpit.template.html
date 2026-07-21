@@ -1,11 +1,17 @@
+<!doctype html>
 <!--
   Intune cockpit template for Get-IntuneOverview -AsDashboard.
-  The command injects a JSON snapshot in place of __COCKPIT_DATA__ (inside the
-  #cockpit-data script block) and writes the result to a temp .html it opens.
+  The command swaps a JSON snapshot into the #cockpit-data script block and
+  writes the result to a local .html it opens. (Don't write the placeholder
+  token literally in this comment — the injection anchors on the full script
+  element, but prose copies of the token are still confusing.)
   Fully self-contained: inline CSS/JS, system fonts, no network — so it renders
-  offline and nothing leaves the machine. Design + palette validated in the
-  prototype cockpit; see IDEAS.md §5.
+  offline and nothing leaves the machine. The doctype and charset matter: the
+  file is written as UTF-8 without a BOM and carries raw ✓/○/✕ glyphs, and
+  without them a file:// load can guess a legacy encoding or drop into quirks
+  mode. Design + palette validated in the prototype cockpit; see IDEAS.md §5.
 -->
+<meta charset="utf-8">
 <title>Intune Cockpit</title>
 <style>
   :root{
@@ -106,7 +112,6 @@
         font-size:11.5px; color:var(--ink-3); display:flex; gap:8px; flex-wrap:wrap; align-items:center}
   .foot .mono{color:var(--ink-2)}
   svg{display:block; width:100%; overflow:visible}
-  [tabindex]:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
   @media (max-width:920px){ .kpis{grid-template-columns:repeat(2,1fr)} .grid2{grid-template-columns:1fr}
                             .compliance{grid-template-columns:130px 1fr} .cfg{grid-template-columns:1fr 1fr} }
   @media (max-width:520px){ .kpis{grid-template-columns:1fr 1fr} .cfg{grid-template-columns:1fr} }
@@ -143,7 +148,7 @@
 
   <div class="grid2">
     <div class="card">
-      <div class="h-row"><h2>Stale devices</h2><span class="meta">no check&#8209;in 30+ days</span></div>
+      <div class="h-row"><h2>Stale devices</h2><span class="meta" id="stale-meta"></span></div>
       <div class="att-list" id="stale"></div>
     </div>
     <div class="card">
@@ -172,7 +177,13 @@
 (function(){
   "use strict";
   var D=JSON.parse(document.getElementById("cockpit-data").textContent);
-  var COL={good:"#3DD68C",warn:"#E8B93E",crit:"#F0684A",unknown:"#6E8086",accent:"#2FC8E0",ink:"#E7EDEE",surf2:"#1B262A"};
+  var staleDays=D.meta.staleDays||30;
+  // Palette read from the :root custom properties, so CSS stays the single
+  // source of truth for every color the JS paints (SVG strokes, dots, swatches).
+  var css=getComputedStyle(document.documentElement);
+  var cv=function(n){return css.getPropertyValue(n).trim();};
+  var COL={good:cv("--good"),warn:cv("--warn"),crit:cv("--crit"),unknown:cv("--unknown"),
+           accent:cv("--accent"),ink:cv("--ink"),surf2:cv("--surface-2")};
   var bucketColor=function(b){return COL[b]||COL.unknown;};
 
   var tt=document.getElementById("tt"),ttT=tt.querySelector(".tt-t"),ttS=tt.querySelector(".tt-s");
@@ -186,6 +197,7 @@
   // meta
   document.getElementById("m-tenant").textContent=D.meta.tenant||"";
   document.getElementById("m-generated").textContent="as of "+D.meta.generated;
+  document.getElementById("stale-meta").textContent="no check‑in "+staleDays+"+ days";
 
   // KPIs
   (function(){
@@ -195,7 +207,7 @@
       {lbl:"Managed devices",val:String(D.kpis.total),cls:"",dot:COL.accent,sub:"enrolled endpoints"},
       {lbl:"Compliance",val:pct+"<small>%</small>",cls:"hero",dot:COL.good,sub:D.kpis.compliant+" of "+D.kpis.total+" compliant"},
       {lbl:"Non-compliant",val:String(D.kpis.nonCompliant),cls:D.kpis.nonCompliant>0?"critv":"goodv",dot:D.kpis.nonCompliant>0?COL.crit:COL.good,sub:"need remediation"},
-      {lbl:"Stale · 30d+",val:String(D.kpis.stale),cls:D.kpis.stale>0?"warnv":"goodv",dot:D.kpis.stale>0?COL.warn:COL.good,sub:"no check-in 30+ days"}
+      {lbl:"Stale · "+staleDays+"d+",val:String(D.kpis.stale),cls:D.kpis.stale>0?"warnv":"goodv",dot:D.kpis.stale>0?COL.warn:COL.good,sub:"no check-in "+staleDays+"+ days"}
     ];
     tiles.forEach(function(t){
       var el=document.createElement("div"); el.className="tile"+(t.cls==="hero"?" hero":"");
@@ -246,9 +258,13 @@
     if(!os.length){host.innerHTML='<div class="empty">No devices enrolled.</div>'; return;}
     os.forEach(function(d){
       var row=document.createElement("div"); row.className="bar-row";
-      row.innerHTML='<span class="blabel" title="'+esc(d.label)+'">'+esc(d.label)+'</span>'+
+      row.innerHTML='<span class="blabel"></span>'+
         '<span class="bar-track"><span class="bar-fill"></span></span><span class="bval">'+d.value+'</span>';
       host.appendChild(row);
+      // textContent/.title are context-correct for any label; esc() is not
+      // attribute-safe (it leaves quotes alone), so never concatenate it there.
+      var blabel=row.querySelector(".blabel");
+      blabel.textContent=d.label; blabel.title=d.label;
       var fill=row.querySelector(".bar-fill");
       requestAnimationFrame(function(){requestAnimationFrame(function(){fill.style.width=(d.value/max*100)+"%";});});
       var track=row.querySelector(".bar-track");
@@ -268,7 +284,7 @@
       host.appendChild(el);
     });
   }
-  renderAtt("stale",D.stale,"All devices checked in within 30 days.");
+  renderAtt("stale",D.stale,"All devices checked in within "+staleDays+" days.");
   renderAtt("noncompliant",D.nonCompliant,"Every device is compliant.");
 
   // config surface

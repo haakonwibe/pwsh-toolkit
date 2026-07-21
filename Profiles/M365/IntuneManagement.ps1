@@ -22,9 +22,11 @@ function Get-MgGraphAllPage {
 }
 
 # Gather the whole Intune snapshot in one place so the console overview and the
-# -AsDashboard render read the SAME data (no double-fetch, no drift). Returns
-# $null on a fatal failure (the managed-device read) after warning; the
-# configuration/app counts are best-effort and come back $null when unavailable.
+# -AsDashboard render read the SAME data (no double-fetch, no drift). A fatal
+# failure (the managed-device read) comes back as an object with Error set —
+# no console output here, so interactive and headless callers each decide how
+# to present it. The configuration/app counts are best-effort and come back
+# $null when unavailable.
 function Get-IntuneOverviewData {
     try {
         $devices = Get-MgGraphAllPage -Uri ("v1.0/deviceManagement/managedDevices?" +
@@ -33,19 +35,17 @@ function Get-IntuneOverviewData {
     catch {
         # Typical causes: scopes consented before the Intune tiers (reconnect),
         # or no Intune license on the tenant.
-        Write-Warning "Couldn't read managed devices: $(($_.Exception.Message -split '\r?\n', 2)[0])"
-        Write-Host '  If this is a 403, reconnect to pick up the Intune scopes: Connect-Tenant' -ForegroundColor Yellow
-        return $null
+        return [pscustomobject]@{ Error = ($_.Exception.Message -split '\r?\n', 2)[0] }
     }
 
     # Configuration surface — best-effort. v1.0 covers classic profiles and
     # compliance policies; Settings Catalog lives under /beta only. A failure
     # (permissions, beta shape) leaves the count $null so consumers can say so.
     $configs = $compliance = $catalog = $apps = $null
-    try {
-        $configs    = @(Get-MgGraphAllPage -Uri 'v1.0/deviceManagement/deviceConfigurations?$select=id&$top=999').Count
-        $compliance = @(Get-MgGraphAllPage -Uri 'v1.0/deviceManagement/deviceCompliancePolicies?$select=id&$top=999').Count
-    } catch { Write-Debug "config/compliance counts unavailable: $($_.Exception.Message)" }
+    try { $configs = @(Get-MgGraphAllPage -Uri 'v1.0/deviceManagement/deviceConfigurations?$select=id&$top=999').Count }
+    catch { Write-Debug "config count unavailable: $($_.Exception.Message)" }
+    try { $compliance = @(Get-MgGraphAllPage -Uri 'v1.0/deviceManagement/deviceCompliancePolicies?$select=id&$top=999').Count }
+    catch { Write-Debug "compliance-policy count unavailable: $($_.Exception.Message)" }
     try { $catalog = @(Get-MgGraphAllPage -Uri 'beta/deviceManagement/configurationPolicies?$select=id&$top=999').Count }
     catch { Write-Debug "Settings Catalog count unavailable: $($_.Exception.Message)" }
     try { $apps = @(Get-MgGraphAllPage -Uri 'v1.0/deviceAppManagement/mobileApps?$select=id&$top=999').Count }
@@ -56,6 +56,7 @@ function Get-IntuneOverviewData {
     $tenant = if ($ctx.Account -and $ctx.Account -match '@(.+)$') { $Matches[1] } else { $ctx.TenantId }
 
     [pscustomobject]@{
+        Error              = $null
         Devices            = @($devices)
         Configs            = $configs
         CompliancePolicies = $compliance
@@ -80,6 +81,23 @@ function Get-ComplianceBucket {
     }
 }
 
+# The staleness policy, in one place: a device that hasn't checked in for
+# IntuneStaleDays is stale; IntuneStaleCritDays (or never having synced) reads
+# as critical. The console, the dashboard payload, and the cockpit's labels
+# all derive from these.
+$script:IntuneStaleDays     = 30
+$script:IntuneStaleCritDays = 60
+
+# Whole days since a device's last check-in as of $AsOf; $null when it has
+# never synced. Floor, not round — a device is "30 days stale" only once 30
+# full days have passed, and every renderer must agree at the boundary.
+function Get-DeviceSyncAgeDays {
+    [OutputType([int])]
+    param($Device, [Parameter(Mandatory)][datetime] $AsOf)
+    if (-not $Device.lastSyncDateTime) { return $null }
+    [int][math]::Floor(($AsOf - [datetime]$Device.lastSyncDateTime).TotalDays)
+}
+
 # Shape a Get-IntuneOverviewData object into the self-contained cockpit HTML by
 # injecting a JSON snapshot into the template. Pure (data + template file ->
 # string), so it's unit-testable without Graph or a browser.
@@ -94,35 +112,40 @@ function ConvertTo-IntuneDashboardHtml {
         throw "Cockpit template not found: $TemplatePath"
     }
 
-    $devices = @($Data.Devices)
+    # @() alone would turn a bare $null Devices property into one phantom
+    # device (@($null).Count is 1) — filter, so a malformed $Data renders empty.
+    $devices = @($Data.Devices | Where-Object { $null -ne $_ })
     $total   = $devices.Count
     $now     = $Data.Generated
 
-    # Compliance aggregated into the four buckets the donut understands.
-    $compliant = @($devices | Where-Object { $_.complianceState -eq 'compliant' }).Count
-    $grace     = @($devices | Where-Object { $_.complianceState -eq 'inGracePeriod' }).Count
-    $crit      = @($devices | Where-Object { (Get-ComplianceBucket $_.complianceState) -eq 'crit' }).Count
-    $other     = $total - $compliant - $grace - $crit
-    $segments  = @()
-    if ($compliant) { $segments += [pscustomobject]@{ label = 'Compliant';       value = $compliant; bucket = 'good' } }
-    if ($grace)     { $segments += [pscustomobject]@{ label = 'In grace period';  value = $grace;     bucket = 'warn' } }
-    if ($crit)      { $segments += [pscustomobject]@{ label = 'Non-compliant';    value = $crit;      bucket = 'crit' } }
-    if ($other -gt 0) { $segments += [pscustomobject]@{ label = 'Not evaluated';  value = $other;     bucket = 'unknown' } }
-    $pct = if ($total) { [int][math]::Round($compliant / $total * 100) } else { 0 }
+    # One classification pass groups every device into the four buckets the
+    # donut understands; the crit group doubles as the non-compliant list.
+    $count       = @{ good = 0; warn = 0; crit = 0; unknown = 0 }
+    $critDevices = @()
+    foreach ($g in ($devices | Group-Object { Get-ComplianceBucket $_.complianceState })) {
+        $count[$g.Name] = $g.Count
+        if ($g.Name -eq 'crit') { $critDevices = @($g.Group) }
+    }
+    $segments = @()
+    if ($count.good)    { $segments += [pscustomobject]@{ label = 'Compliant';       value = $count.good;    bucket = 'good' } }
+    if ($count.warn)    { $segments += [pscustomobject]@{ label = 'In grace period';  value = $count.warn;    bucket = 'warn' } }
+    if ($count.crit)    { $segments += [pscustomobject]@{ label = 'Non-compliant';    value = $count.crit;    bucket = 'crit' } }
+    if ($count.unknown) { $segments += [pscustomobject]@{ label = 'Not evaluated';    value = $count.unknown; bucket = 'unknown' } }
+    $pct = if ($total) { [int][math]::Round($count.good / $total * 100, [System.MidpointRounding]::AwayFromZero) } else { 0 }
 
     $os = @($devices | Group-Object operatingSystem | Sort-Object Count -Descending | ForEach-Object {
         [pscustomobject]@{ label = if ($_.Name) { $_.Name } else { 'Unknown' }; value = $_.Count }
     })
 
-    # Stale: no check-in for 30+ days (or never). 60+ / never reads as critical.
+    # Stale: no check-in for IntuneStaleDays+ (or never); crit past the crit cutoff.
     $staleTmp = foreach ($d in $devices) {
-        $never = -not $d.lastSyncDateTime
-        $age   = if ($never) { $null } else { [int]((New-TimeSpan -Start ([datetime]$d.lastSyncDateTime) -End $now).TotalDays) }
-        if ($never -or $age -ge 30) {
+        $age   = Get-DeviceSyncAgeDays -Device $d -AsOf $now
+        $never = $null -eq $age
+        if ($never -or $age -ge $script:IntuneStaleDays) {
             [pscustomobject]@{
                 dev   = $d.deviceName
                 why   = "$($d.operatingSystem) · last sync $(if ($never) { 'never' } else { ([datetime]$d.lastSyncDateTime).ToString('yyyy-MM-dd') })"
-                sev   = if ($never -or $age -ge 60) { 'crit' } else { 'warn' }
+                sev   = if ($never -or $age -ge $script:IntuneStaleCritDays) { 'crit' } else { 'warn' }
                 state = if ($never) { 'never' } else { "$age d" }
                 ic    = "$([char]0x25CB)"   # ○
                 _age  = if ($never) { [int]::MaxValue } else { $age }
@@ -134,7 +157,7 @@ function ConvertTo-IntuneDashboardHtml {
     # Non-compliant list = the crit bucket (needs remediation); grace shows in
     # the donut only. Basic $select carries no failure reason, so the state is
     # the "why" — a per-device reason lookup is a future add.
-    $nonCompliant = @($devices | Where-Object { (Get-ComplianceBucket $_.complianceState) -eq 'crit' } | ForEach-Object {
+    $nonCompliant = @($critDevices | ForEach-Object {
         [pscustomobject]@{
             dev = $_.deviceName; why = "$($_.operatingSystem) · $($_.complianceState)"
             sev = 'crit'; state = $_.complianceState; ic = "$([char]0x2715)"   # ✕
@@ -142,9 +165,10 @@ function ConvertTo-IntuneDashboardHtml {
     })
 
     $payload = [pscustomobject]@{
-        meta    = [pscustomobject]@{ tenant = $Data.Tenant; generated = $now.ToString('yyyy-MM-dd HH:mm') }
-        kpis    = [pscustomobject]@{ total = $total; compliant = $compliant; compliancePct = $pct
-                                     nonCompliant = $crit; stale = @($stale).Count }
+        meta    = [pscustomobject]@{ tenant = $Data.Tenant; generated = $now.ToString('yyyy-MM-dd HH:mm')
+                                     staleDays = $script:IntuneStaleDays }
+        kpis    = [pscustomobject]@{ total = $total; compliant = $count.good; compliancePct = $pct
+                                     nonCompliant = $count.crit; stale = @($stale).Count }
         compliance   = @($segments)
         os           = @($os)
         stale        = @($stale)
@@ -161,20 +185,31 @@ function ConvertTo-IntuneDashboardHtml {
     # data block. < is valid JSON and JSON.parse turns it back into '<'.
     $json = ($payload | ConvertTo-Json -Depth 6).Replace('<', ([char]0x5C + 'u003c'))
     $tpl  = Get-Content -Raw -LiteralPath $TemplatePath
-    return $tpl.Replace('__COCKPIT_DATA__', $json)
+    # Swap the payload into the one #cockpit-data element. Anchoring on the
+    # full element — not the bare token, which .Replace would also hit inside
+    # comments or prose — keeps the injection to exactly one place.
+    $anchor = '<script id="cockpit-data" type="application/json">__COCKPIT_DATA__</script>'
+    if (-not $tpl.Contains($anchor)) {
+        throw "Cockpit template has no #cockpit-data placeholder: $TemplatePath"
+    }
+    return $tpl.Replace($anchor, $anchor.Replace('__COCKPIT_DATA__', $json))
 }
 
 # Render the dashboard to a stable file under %LOCALAPPDATA% and open it.
 function Show-IntuneDashboard {
     param([Parameter(Mandatory)] $Data)
     $html = ConvertTo-IntuneDashboardHtml -Data $Data
-    $dir  = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit'
-    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $out = Join-Path $dir 'intune-cockpit.html'
+    $out  = Get-ToolkitDataPath 'intune-cockpit.html'
     Set-Content -LiteralPath $out -Value $html -Encoding utf8
     Write-Host "  Dashboard written: $out" -ForegroundColor Green
-    Write-Host '  Opening in your browser…' -ForegroundColor DarkGray
-    Invoke-Item -LiteralPath $out
+    try {
+        Write-Host '  Opening in your browser…' -ForegroundColor DarkGray
+        Invoke-Item -LiteralPath $out -ErrorAction Stop
+    }
+    catch {
+        # The dashboard itself is fine — only the auto-open failed.
+        Write-Host "  Couldn't open it automatically — open the file above manually." -ForegroundColor Yellow
+    }
 }
 
 function Get-IntuneOverview {
@@ -211,26 +246,36 @@ function Get-IntuneOverview {
         return
     }
 
+    # Console mode banners before the fetch, so a fetch failure still appears
+    # under the command's usual header rather than as a bare warning.
+    if (-not $AsDashboard) {
+        Write-Host "`n📱 INTUNE OVERVIEW" -ForegroundColor Cyan
+        Write-Host "==================" -ForegroundColor Cyan
+    }
+
     $data = Get-IntuneOverviewData
-    if (-not $data) { return }   # fatal fetch already warned
+    if ($data.Error) {
+        Write-Warning "Couldn't read managed devices: $($data.Error)"
+        Write-Host '  If this is a 403, reconnect to pick up the Intune scopes: Connect-Tenant' -ForegroundColor Yellow
+        return
+    }
 
     if ($AsDashboard) { Show-IntuneDashboard -Data $data; return }
 
     # ---- console overview ----
     $devices = @($data.Devices)
-    Write-Host "`n📱 INTUNE OVERVIEW" -ForegroundColor Cyan
-    Write-Host "==================" -ForegroundColor Cyan
-
     Write-Host "`n💻 Managed Devices:" -ForegroundColor Yellow
     Write-Host "  Total: $($devices.Count)" -ForegroundColor White
 
     # Compliance: green when everything is compliant; name the exceptions.
+    # Severity comes from Get-ComplianceBucket so console and dashboard agree —
+    # error/conflict are remediation-red in both, not a softer yellow.
     $byCompliance = $devices | Group-Object complianceState | Sort-Object Count -Descending
     foreach ($g in $byCompliance) {
-        $color = switch ($g.Name) {
-            'compliant'    { 'Green' }
-            'noncompliant' { 'Red' }
-            default        { 'Yellow' }   # inGracePeriod, unknown, error, conflict
+        $color = switch (Get-ComplianceBucket $g.Name) {
+            'good'  { 'Green' }
+            'crit'  { 'Red' }
+            default { 'Yellow' }   # warn (inGracePeriod), unknown
         }
         Write-Host "  $($g.Name): $($g.Count)" -ForegroundColor $color
     }
@@ -248,26 +293,34 @@ function Get-IntuneOverview {
     # of management — policies, apps, and compliance data are all stale with it.
     Write-Host "`n🔄 Sync Health:" -ForegroundColor Yellow
     $now    = $data.Generated
-    $recent = @($devices | Where-Object { $_.lastSyncDateTime -and ([datetime]$_.lastSyncDateTime) -gt $now.AddDays(-7) })
-    $stale  = @($devices | Where-Object { -not $_.lastSyncDateTime -or ([datetime]$_.lastSyncDateTime) -lt $now.AddDays(-30) })
+    $recent = @($devices | Where-Object { $age = Get-DeviceSyncAgeDays -Device $_ -AsOf $now
+                                          ($null -ne $age) -and $age -lt 7 })
+    $stale  = @($devices | Where-Object { $age = Get-DeviceSyncAgeDays -Device $_ -AsOf $now
+                                          ($null -eq $age) -or $age -ge $script:IntuneStaleDays })
     Write-Host "  Synced within 7 days: $($recent.Count) of $($devices.Count)" -ForegroundColor White
     if ($stale.Count -gt 0) {
-        Write-Host "  Stale (30+ days): $($stale.Count)" -ForegroundColor Red
+        Write-Host "  Stale ($($script:IntuneStaleDays)+ days): $($stale.Count)" -ForegroundColor Red
         foreach ($d in $stale) {
             $last = if ($d.lastSyncDateTime) { ([datetime]$d.lastSyncDateTime).ToString('yyyy-MM-dd') } else { 'never' }
             Write-Host "    - $($d.deviceName)  (last sync: $last)" -ForegroundColor DarkYellow
         }
     } else {
-        Write-Host '  Stale (30+ days): 0' -ForegroundColor Green
+        Write-Host "  Stale ($($script:IntuneStaleDays)+ days): 0" -ForegroundColor Green
     }
 
-    # Configuration surface — counts gathered above; $null means unavailable.
+    # Configuration surface — counts gathered above; $null means that count was
+    # unavailable. Each is best-effort and can fail independently, so each gets
+    # its own line rather than one all-or-nothing gate.
     Write-Host "`n📋 Configuration:" -ForegroundColor Yellow
     if ($null -ne $data.Configs) {
         Write-Host "  Device configuration profiles: $($data.Configs)" -ForegroundColor White
+    } else {
+        Write-Host '  Device configuration profile count unavailable (insufficient permissions)' -ForegroundColor Gray
+    }
+    if ($null -ne $data.CompliancePolicies) {
         Write-Host "  Compliance policies: $($data.CompliancePolicies)" -ForegroundColor White
     } else {
-        Write-Host '  Configuration counts unavailable (insufficient permissions)' -ForegroundColor Gray
+        Write-Host '  Compliance policy count unavailable (insufficient permissions)' -ForegroundColor Gray
     }
     if ($null -ne $data.Catalog) {
         Write-Host "  Settings Catalog policies: $($data.Catalog)" -ForegroundColor White

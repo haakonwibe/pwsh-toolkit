@@ -1027,6 +1027,35 @@ Describe 'Get-IntuneOverview dashboard render' {
         $empty = [pscustomobject]@{ Devices=@(); Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
         { ConvertTo-IntuneDashboardHtml -Data $empty } | Should -Not -Throw
     }
+
+    It 'injects the snapshot exactly once' {
+        # The template mentions the placeholder token in its prose comment too;
+        # a bare .Replace once duplicated the whole payload into that comment.
+        # "compliancePct" (quoted) exists only in the JSON, never in the markup/JS.
+        [regex]::Matches($script:html, [regex]::Escape('"compliancePct"')).Count | Should -Be 1
+    }
+
+    It 'does not mark a device stale before 30 full days' {
+        # 29 days 18 h: a nearest-int rounding of TotalDays says 30, the floor
+        # says 29 — the device is not yet stale, and console/dashboard agree.
+        $d = [pscustomobject]@{
+            Devices=@([pscustomobject]@{ deviceName='EDGE-1'; operatingSystem='Windows'; complianceState='compliant'; lastSyncDateTime=(Get-Date).AddDays(-29).AddHours(-18) })
+            Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        $h = ConvertTo-IntuneDashboardHtml -Data $d
+        $p = [regex]::Match($h,'(?s)<script id="cockpit-data"[^>]*>(.*?)</script>').Groups[1].Value | ConvertFrom-Json
+        $p.kpis.stale | Should -Be 0
+    }
+
+    It 'renders a bare-null Devices property as zero devices, not one phantom' {
+        $broken = [pscustomobject]@{ Devices=$null; Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        $h = ConvertTo-IntuneDashboardHtml -Data $broken
+        $p = [regex]::Match($h,'(?s)<script id="cockpit-data"[^>]*>(.*?)</script>').Groups[1].Value | ConvertFrom-Json
+        $p.kpis.total | Should -Be 0
+    }
+
+    It 'carries the stale threshold in the payload for the template labels' {
+        $script:payload.meta.staleDays | Should -Be 30
+    }
 }
 
 Describe 'j tab completion' {
