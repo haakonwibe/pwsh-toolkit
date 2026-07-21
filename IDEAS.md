@@ -107,7 +107,7 @@ examples), keep titles under 70 chars, write "why" not "what".
 
 ---
 
-## 4. Clipboard snippet stash (`cb`) — 🔨 Building
+## 4. Clipboard snippet stash (`cb`) — ✅ Shipped 2026-07-19
 
 Built in `Profiles/Common/Clipboard.ps1`. Reframed from "clipboard history" to a
 **curated snippet stash** — the sharper tool, and the one Win+V can't be. A pure
@@ -191,7 +191,7 @@ that the toolkit already computes genuinely valuable state (`Get-TenantOverview`
 `Get-IntuneOverview`, `Get-AzureResourceCosts`) and then throws it at a terminal
 where it scrolls away. These bets reuse that data differently.
 
-## 5. Cockpit — a visual dashboard from data the toolkit already gathers — 🔨 Building
+## 5. Cockpit — a visual dashboard from data the toolkit already gathers — ✅ Shipped 2026-07-21 (static snapshot; live/hosted still open)
 
 **What:** Render the overview commands' output as a single at-a-glance visual
 dashboard instead of scrolling green text — compliance donut, stale devices

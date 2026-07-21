@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://haakonwibe.github.io/pwsh-toolkit/poster.html">
-    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 56 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
+    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 61 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
   </a>
 </p>
 <p align="center">

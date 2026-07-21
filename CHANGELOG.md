@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 > The detailed pre-release history (0.1.0–0.1.62) was condensed into the summary
 > below when the repository was squashed for its public release.
 
-## [Unreleased]
+## [0.6.0] - 2026-07-21
 
 ### Added
 
