@@ -91,7 +91,7 @@ $script:IntuneStaleCritDays = 60
 # Whole days since a device's last check-in as of $AsOf; $null when it has
 # never synced. Floor, not round — a device is "30 days stale" only once 30
 # full days have passed, and every renderer must agree at the boundary.
-function Get-DeviceSyncAgeDays {
+function Get-DeviceSyncAge {
     [OutputType([int])]
     param($Device, [Parameter(Mandatory)][datetime] $AsOf)
     if (-not $Device.lastSyncDateTime) { return $null }
@@ -139,7 +139,7 @@ function ConvertTo-IntuneDashboardHtml {
 
     # Stale: no check-in for IntuneStaleDays+ (or never); crit past the crit cutoff.
     $staleTmp = foreach ($d in $devices) {
-        $age   = Get-DeviceSyncAgeDays -Device $d -AsOf $now
+        $age   = Get-DeviceSyncAge -Device $d -AsOf $now
         $never = $null -eq $age
         if ($never -or $age -ge $script:IntuneStaleDays) {
             [pscustomobject]@{
@@ -293,9 +293,9 @@ function Get-IntuneOverview {
     # of management — policies, apps, and compliance data are all stale with it.
     Write-Host "`n🔄 Sync Health:" -ForegroundColor Yellow
     $now    = $data.Generated
-    $recent = @($devices | Where-Object { $age = Get-DeviceSyncAgeDays -Device $_ -AsOf $now
+    $recent = @($devices | Where-Object { $age = Get-DeviceSyncAge -Device $_ -AsOf $now
                                           ($null -ne $age) -and $age -lt 7 })
-    $stale  = @($devices | Where-Object { $age = Get-DeviceSyncAgeDays -Device $_ -AsOf $now
+    $stale  = @($devices | Where-Object { $age = Get-DeviceSyncAge -Device $_ -AsOf $now
                                           ($null -eq $age) -or $age -ge $script:IntuneStaleDays })
     Write-Host "  Synced within 7 days: $($recent.Count) of $($devices.Count)" -ForegroundColor White
     if ($stale.Count -gt 0) {
