@@ -1,0 +1,286 @@
+<!--
+  Intune cockpit template for Get-IntuneOverview -AsDashboard.
+  The command injects a JSON snapshot in place of __COCKPIT_DATA__ (inside the
+  #cockpit-data script block) and writes the result to a temp .html it opens.
+  Fully self-contained: inline CSS/JS, system fonts, no network — so it renders
+  offline and nothing leaves the machine. Design + palette validated in the
+  prototype cockpit; see IDEAS.md §5.
+-->
+<title>Intune Cockpit</title>
+<style>
+  :root{
+    --ground:#0E1416; --surface:#161F22; --surface-2:#1B262A;
+    --line:#26343A; --line-soft:#1F2B2F;
+    --ink:#E7EDEE; --ink-2:#9DB0B4; --ink-3:#5F7276;
+    --accent:#2FC8E0; --accent-dim:rgba(47,200,224,.13);
+    --good:#3DD68C; --warn:#E8B93E; --crit:#F0684A; --unknown:#6E8086;
+    --mono:"Cascadia Code","Cascadia Mono",ui-monospace,Consolas,"SF Mono",Menlo,monospace;
+    --sans:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    --r:10px; --gap:16px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0}
+  .page{background:var(--ground); color:var(--ink); font-family:var(--sans);
+    min-height:100vh; padding:28px clamp(16px,4vw,40px) 56px; -webkit-font-smoothing:antialiased; line-height:1.45}
+  .wrap{max-width:1200px; margin:0 auto}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+  .eyebrow{font-size:11px; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+
+  .bar{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+       padding-bottom:18px; margin-bottom:22px; border-bottom:1px solid var(--line-soft)}
+  .brand{font-family:var(--mono); font-size:16px; font-weight:600; color:var(--ink);
+         display:flex; align-items:center; gap:9px}
+  .brand .glyph{width:11px; height:11px; background:var(--accent); box-shadow:0 0 0 3px var(--accent-dim); transform:rotate(45deg)}
+  .brand b{color:var(--accent); font-weight:600}
+  .bar .tenant{color:var(--ink-2); font-size:13px}
+  .bar .spacer{flex:1}
+  .bar .asof{color:var(--ink-3); font-size:12.5px}
+  .chip-ro{font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase;
+           color:var(--accent); border:1px solid rgba(47,200,224,.35); border-radius:999px;
+           padding:3px 9px; background:rgba(47,200,224,.06)}
+
+  .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:var(--gap); margin-bottom:var(--gap)}
+  .tile{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px 17px}
+  .tile.hero{border-color:rgba(61,214,140,.35); background:linear-gradient(180deg,rgba(61,214,140,.06),var(--surface) 60%)}
+  .tile .val{font-family:var(--mono); font-size:30px; font-weight:600; letter-spacing:-.02em; margin-top:9px; line-height:1}
+  .tile .val small{font-size:15px; color:var(--ink-2); font-weight:500}
+  .tile.hero .val{color:var(--good)}
+  .tile .sub{margin-top:8px; font-size:12px; color:var(--ink-3); display:flex; align-items:center; gap:6px}
+  .tile .sub .dot{width:7px; height:7px; border-radius:50%}
+  .val.warnv{color:var(--warn)} .val.critv{color:var(--crit)} .val.goodv{color:var(--good)}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:var(--gap); margin-bottom:var(--gap)}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:18px 19px}
+  .card h2{margin:0; font-size:13px; font-weight:600; color:var(--ink)}
+  .card .h-row{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:16px; gap:12px}
+  .card .h-row .meta{font-size:12px; color:var(--ink-3)}
+
+  .compliance{display:grid; grid-template-columns:150px 1fr; gap:20px; align-items:center}
+  .donut-wrap{position:relative; width:150px; height:150px}
+  .donut-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center}
+  .donut-center .pct{font-family:var(--mono); font-size:32px; font-weight:600; color:var(--good); line-height:1}
+  .donut-center .cap{font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); margin-top:4px}
+  .legend{display:flex; flex-direction:column; gap:2px}
+  .legend .lrow{display:grid; grid-template-columns:12px 1fr auto auto; gap:10px; align-items:center; padding:7px 6px; border-radius:6px}
+  .legend .lrow:hover{background:var(--surface-2)}
+  .legend .sw{width:10px; height:10px; border-radius:3px}
+  .legend .lname{font-size:13px; color:var(--ink-2)}
+  .legend .lval{font-family:var(--mono); font-size:13px; color:var(--ink)}
+  .legend .lpct{font-family:var(--mono); font-size:12px; color:var(--ink-3); min-width:38px; text-align:right}
+
+  .bars{display:flex; flex-direction:column; gap:13px}
+  .bar-row{display:grid; grid-template-columns:90px 1fr 42px; gap:12px; align-items:center}
+  .bar-row .blabel{font-size:12.5px; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .bar-track{height:16px; background:var(--surface-2); border-radius:5px; overflow:hidden}
+  .bar-fill{height:100%; width:0; background:var(--accent); border-radius:5px; transition:width .7s cubic-bezier(.22,.61,.36,1)}
+  .bar-row .bval{font-family:var(--mono); font-size:12.5px; color:var(--ink); text-align:right}
+
+  .att-list{display:flex; flex-direction:column; gap:2px; max-height:280px; overflow-y:auto}
+  .att{display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center;
+       padding:10px 12px 10px 13px; border-left:2.5px solid var(--line); border-radius:0 7px 7px 0; background:var(--surface)}
+  .att:hover{background:var(--surface-2)}
+  .att.warn{border-left-color:var(--warn)} .att.crit{border-left-color:var(--crit)}
+  .att .dev{font-family:var(--mono); font-size:13px; color:var(--ink)}
+  .att .why{font-size:12px; color:var(--ink-3); margin-top:2px}
+  .empty{color:var(--ink-3); font-size:13px; padding:10px 4px; display:flex; align-items:center; gap:8px}
+  .empty .ok{color:var(--good); font-weight:700}
+  .state{font-family:var(--mono); font-size:11px; padding:3px 8px; border-radius:999px;
+         display:inline-flex; align-items:center; gap:6px; white-space:nowrap}
+  .state .ic{font-style:normal; font-weight:700}
+  .state.warn{color:var(--warn); background:rgba(232,185,62,.09); border:1px solid rgba(232,185,62,.25)}
+  .state.crit{color:var(--crit); background:rgba(240,104,74,.09); border:1px solid rgba(240,104,74,.25)}
+
+  .cfg{display:grid; grid-template-columns:repeat(4,1fr); gap:11px}
+  .cfg .c{background:var(--surface-2); border:1px solid var(--line-soft); border-radius:8px; padding:13px 14px}
+  .cfg .c .n{font-family:var(--mono); font-size:23px; font-weight:600; color:var(--ink); line-height:1}
+  .cfg .c .n.na{color:var(--ink-3); font-size:19px}
+  .cfg .c .l{font-size:11.5px; color:var(--ink-3); margin-top:7px}
+  .cfg .c .l b{color:var(--accent); font-weight:600; font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase}
+
+  #tt{position:fixed; pointer-events:none; z-index:50; opacity:0; transition:opacity .1s;
+      background:#0A0F11; border:1px solid var(--line); border-radius:7px; padding:8px 10px;
+      font-size:12px; color:var(--ink); box-shadow:0 6px 24px rgba(0,0,0,.5); max-width:260px}
+  #tt .tt-t{font-family:var(--mono); font-size:12px; color:var(--ink); margin-bottom:2px}
+  #tt .tt-s{color:var(--ink-3); font-size:11.5px}
+  .foot{margin-top:26px; padding-top:16px; border-top:1px solid var(--line-soft);
+        font-size:11.5px; color:var(--ink-3); display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .foot .mono{color:var(--ink-2)}
+  svg{display:block; width:100%; overflow:visible}
+  [tabindex]:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+  @media (max-width:920px){ .kpis{grid-template-columns:repeat(2,1fr)} .grid2{grid-template-columns:1fr}
+                            .compliance{grid-template-columns:130px 1fr} .cfg{grid-template-columns:1fr 1fr} }
+  @media (max-width:520px){ .kpis{grid-template-columns:1fr 1fr} .cfg{grid-template-columns:1fr} }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important; animation:none!important} .bar-fill{transition:none!important} }
+</style>
+
+<div class="page"><div class="wrap">
+  <div class="bar">
+    <div class="brand"><span class="glyph"></span>intune&#8209;<b>cockpit</b></div>
+    <span class="tenant" id="m-tenant"></span>
+    <span class="spacer"></span>
+    <span class="asof mono" id="m-generated"></span>
+    <span class="chip-ro">read&#8209;only snapshot</span>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="h-row"><h2>Device compliance</h2><span class="meta" id="comp-total"></span></div>
+      <div class="compliance">
+        <div class="donut-wrap">
+          <svg id="donut" viewBox="0 0 42 42" width="150" height="150" role="img" aria-label="Compliance breakdown"></svg>
+          <div class="donut-center"><div class="pct" id="comp-pct"></div><div class="cap">compliant</div></div>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="h-row"><h2>Devices by platform</h2><span class="meta">enrolled</span></div>
+      <div class="bars" id="osbars"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="h-row"><h2>Stale devices</h2><span class="meta">no check&#8209;in 30+ days</span></div>
+      <div class="att-list" id="stale"></div>
+    </div>
+    <div class="card">
+      <div class="h-row"><h2>Non&#8209;compliant devices</h2><span class="meta">state</span></div>
+      <div class="att-list" id="noncompliant"></div>
+    </div>
+  </div>
+
+  <div class="grid2" style="grid-template-columns:1fr">
+    <div class="card">
+      <div class="h-row"><h2>Configuration surface</h2></div>
+      <div class="cfg" id="cfg"></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="mono">Get-IntuneOverview -AsDashboard</span>
+    <span class="spacer" style="flex:1"></span>
+    <span>Read-only Graph snapshot · generated locally · nothing leaves this machine.</span>
+  </div>
+</div></div>
+<div id="tt" role="tooltip"><div class="tt-t"></div><div class="tt-s"></div></div>
+
+<script id="cockpit-data" type="application/json">__COCKPIT_DATA__</script>
+<script>
+(function(){
+  "use strict";
+  var D=JSON.parse(document.getElementById("cockpit-data").textContent);
+  var COL={good:"#3DD68C",warn:"#E8B93E",crit:"#F0684A",unknown:"#6E8086",accent:"#2FC8E0",ink:"#E7EDEE",surf2:"#1B262A"};
+  var bucketColor=function(b){return COL[b]||COL.unknown;};
+
+  var tt=document.getElementById("tt"),ttT=tt.querySelector(".tt-t"),ttS=tt.querySelector(".tt-s");
+  function showTip(x,y,t,s){ttT.textContent=t; ttS.textContent=s||""; tt.style.opacity="1";
+    var pad=14,w=tt.offsetWidth,h=tt.offsetHeight,lx=x+pad,ly=y+pad;
+    if(lx+w>window.innerWidth-8)lx=x-w-pad; if(ly+h>window.innerHeight-8)ly=y-h-pad;
+    tt.style.left=lx+"px"; tt.style.top=ly+"px";}
+  function hideTip(){tt.style.opacity="0";}
+  function esc(s){var d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML;}
+
+  // meta
+  document.getElementById("m-tenant").textContent=D.meta.tenant||"";
+  document.getElementById("m-generated").textContent="as of "+D.meta.generated;
+
+  // KPIs
+  (function(){
+    var host=document.getElementById("kpis");
+    var pct=D.kpis.compliancePct;
+    var tiles=[
+      {lbl:"Managed devices",val:String(D.kpis.total),cls:"",dot:COL.accent,sub:"enrolled endpoints"},
+      {lbl:"Compliance",val:pct+"<small>%</small>",cls:"hero",dot:COL.good,sub:D.kpis.compliant+" of "+D.kpis.total+" compliant"},
+      {lbl:"Non-compliant",val:String(D.kpis.nonCompliant),cls:D.kpis.nonCompliant>0?"critv":"goodv",dot:D.kpis.nonCompliant>0?COL.crit:COL.good,sub:"need remediation"},
+      {lbl:"Stale · 30d+",val:String(D.kpis.stale),cls:D.kpis.stale>0?"warnv":"goodv",dot:D.kpis.stale>0?COL.warn:COL.good,sub:"no check-in 30+ days"}
+    ];
+    tiles.forEach(function(t){
+      var el=document.createElement("div"); el.className="tile"+(t.cls==="hero"?" hero":"");
+      var valcls=(t.cls&&t.cls!=="hero")?(" "+t.cls):"";
+      el.innerHTML='<div class="eyebrow">'+t.lbl+'</div><div class="val'+valcls+'">'+t.val+'</div>'+
+        '<div class="sub"><span class="dot" style="background:'+t.dot+'"></span>'+t.sub+'</div>';
+      host.appendChild(el);
+    });
+  })();
+
+  // compliance donut + legend
+  (function(){
+    document.getElementById("comp-pct").textContent=D.kpis.compliancePct+"%";
+    document.getElementById("comp-total").textContent=D.kpis.total+" devices";
+    var segs=D.compliance, total=segs.reduce(function(a,b){return a+b.value;},0)||1;
+    var svg=document.getElementById("donut"),NS="http://www.w3.org/2000/svg";
+    var r=15.915,cx=21,cy=21,gap=1.1;
+    var track=document.createElementNS(NS,"circle");
+    track.setAttribute("cx",cx);track.setAttribute("cy",cy);track.setAttribute("r",r);
+    track.setAttribute("fill","none");track.setAttribute("stroke",COL.surf2);track.setAttribute("stroke-width","5");
+    svg.appendChild(track);
+    var offset=25;
+    segs.forEach(function(s){
+      var frac=s.value/total,len=frac*100,color=bucketColor(s.bucket);
+      var c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",cx);c.setAttribute("cy",cy);c.setAttribute("r",r);
+      c.setAttribute("fill","none");c.setAttribute("stroke",color);c.setAttribute("stroke-width","5");
+      c.setAttribute("stroke-dasharray",(Math.max(len-gap,0.4))+" "+(100-Math.max(len-gap,0.4)));
+      c.setAttribute("stroke-dashoffset",offset);
+      c.addEventListener("mousemove",function(e){showTip(e.clientX,e.clientY,s.label+" — "+s.value,Math.round(frac*100)+"% of "+total+" devices");});
+      c.addEventListener("mouseleave",hideTip);
+      svg.appendChild(c); offset-=len;
+    });
+    var leg=document.getElementById("legend");
+    segs.forEach(function(s){
+      var row=document.createElement("div"); row.className="lrow";
+      row.innerHTML='<span class="sw" style="background:'+bucketColor(s.bucket)+'"></span>'+
+        '<span class="lname">'+esc(s.label)+'</span><span class="lval">'+s.value+'</span>'+
+        '<span class="lpct">'+Math.round(s.value/total*100)+'%</span>';
+      leg.appendChild(row);
+    });
+  })();
+
+  // OS bars
+  (function(){
+    var os=D.os||[], max=os.reduce(function(m,d){return Math.max(m,d.value);},0)||1, total=D.kpis.total||1;
+    var host=document.getElementById("osbars");
+    if(!os.length){host.innerHTML='<div class="empty">No devices enrolled.</div>'; return;}
+    os.forEach(function(d){
+      var row=document.createElement("div"); row.className="bar-row";
+      row.innerHTML='<span class="blabel" title="'+esc(d.label)+'">'+esc(d.label)+'</span>'+
+        '<span class="bar-track"><span class="bar-fill"></span></span><span class="bval">'+d.value+'</span>';
+      host.appendChild(row);
+      var fill=row.querySelector(".bar-fill");
+      requestAnimationFrame(function(){requestAnimationFrame(function(){fill.style.width=(d.value/max*100)+"%";});});
+      var track=row.querySelector(".bar-track");
+      track.addEventListener("mousemove",function(e){showTip(e.clientX,e.clientY,d.label+" — "+d.value,Math.round(d.value/total*100)+"% of fleet");});
+      track.addEventListener("mouseleave",hideTip);
+    });
+  })();
+
+  // attention lists
+  function renderAtt(id,rows,emptyMsg){
+    var host=document.getElementById(id);
+    if(!rows||!rows.length){host.innerHTML='<div class="empty"><span class="ok">✓</span>'+emptyMsg+'</div>'; return;}
+    rows.forEach(function(d){
+      var el=document.createElement("div"); el.className="att "+(d.sev||"warn");
+      el.innerHTML='<div><div class="dev">'+esc(d.dev)+'</div><div class="why">'+esc(d.why)+'</div></div>'+
+        '<span class="state '+(d.sev||"warn")+'"><i class="ic">'+esc(d.ic||"!")+'</i>'+esc(d.state)+'</span>';
+      host.appendChild(el);
+    });
+  }
+  renderAtt("stale",D.stale,"All devices checked in within 30 days.");
+  renderAtt("noncompliant",D.nonCompliant,"Every device is compliant.");
+
+  // config surface
+  (function(){
+    var host=document.getElementById("cfg");
+    D.config.forEach(function(c){
+      var el=document.createElement("div"); el.className="c";
+      var n=(c.value==null)?'<div class="n na">—</div>':'<div class="n">'+c.value+'</div>';
+      var beta=c.beta?' <b>/beta</b>':'';
+      el.innerHTML=n+'<div class="l">'+esc(c.label)+beta+'</div>';
+      host.appendChild(el);
+    });
+  })();
+})();
+</script>

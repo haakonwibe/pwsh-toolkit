@@ -36,7 +36,7 @@ $script:ToolkitGroups = [ordered]@{
 $script:ToolkitInternalCommands = @(
     'Invoke-JumpTo'
     'Get-JumpBookmark', 'Save-JumpBookmark', 'Sync-JumpBookmark', 'Add-JumpBookmark', 'Remove-JumpBookmark'
-    'Get-MgGraphAllPage'
+    'Get-MgGraphAllPage', 'Get-IntuneOverviewData', 'Get-ComplianceBucket', 'ConvertTo-IntuneDashboardHtml', 'Show-IntuneDashboard'
     'Get-RecentFile', 'Format-FileAge', 'Get-FileDizDescription'
     'Convert-SnippetDate', 'ConvertTo-SnippetStamp', 'Format-SnippetPreview', 'Get-ClipSnippet', 'Save-ClipSnippet', 'Limit-ClipSnippet', 'Add-ClipSnippet', 'Remove-ClipSnippet'
     'Get-PeekRarExe', 'Get-Peek7zExe', 'Get-PeekTool'

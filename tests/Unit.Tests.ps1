@@ -44,6 +44,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Catalog.ps1')         # Get-ToolkitCommand
     . (Join-Path $commonDir 'Json.ps1')            # Show-Json + Format-JsonColor
     . (Join-Path $commonDir 'ScheduledTasks.ps1')  # Format-TaskResult, Test-ToolkitTaskVisible
+    . (Join-Path $repoRoot 'Profiles/M365/IntuneManagement.ps1')  # Get-ComplianceBucket, ConvertTo-IntuneDashboardHtml (defining these needs no Graph)
 }
 
 Describe 'touch' {
@@ -958,6 +959,73 @@ Describe 'cb tab completion' {
 
     It 'does not throw on wildcard metacharacters in the word' {
         { & $script:ClipLabelCompleter 'cb' 'Match' '[' $null @{} } | Should -Not -Throw
+    }
+}
+
+Describe 'Get-IntuneOverview dashboard render' {
+
+    BeforeAll {
+        $script:mock = [pscustomobject]@{
+            Devices = @(
+                [pscustomobject]@{ deviceName='PC-1'; operatingSystem='Windows'; complianceState='compliant';     lastSyncDateTime=(Get-Date).AddHours(-2) }
+                [pscustomobject]@{ deviceName='PC-2'; operatingSystem='Windows'; complianceState='noncompliant';  lastSyncDateTime=(Get-Date).AddDays(-1) }
+                [pscustomobject]@{ deviceName='PH-1'; operatingSystem='iOS';     complianceState='inGracePeriod'; lastSyncDateTime=(Get-Date).AddDays(-3) }
+                [pscustomobject]@{ deviceName='PC-3'; operatingSystem='Windows'; complianceState='compliant';     lastSyncDateTime=(Get-Date).AddDays(-45) }
+                [pscustomobject]@{ deviceName='MAC-1';operatingSystem='macOS';   complianceState='compliant';     lastSyncDateTime=$null }
+            )
+            Configs=3; CompliancePolicies=2; Catalog=$null; Apps=7; Tenant='contoso.com'; Generated=Get-Date
+        }
+        $script:html = ConvertTo-IntuneDashboardHtml -Data $script:mock
+        $m = [regex]::Match($script:html,'(?s)<script id="cockpit-data"[^>]*>(.*?)</script>')
+        $script:payload = $m.Groups[1].Value | ConvertFrom-Json
+    }
+
+    It 'maps compliance states to status buckets' {
+        Get-ComplianceBucket 'compliant'     | Should -Be 'good'
+        Get-ComplianceBucket 'inGracePeriod' | Should -Be 'warn'
+        Get-ComplianceBucket 'noncompliant'  | Should -Be 'crit'
+        Get-ComplianceBucket 'error'         | Should -Be 'crit'
+        Get-ComplianceBucket 'somethingNew'  | Should -Be 'unknown'
+    }
+
+    It 'replaces the data placeholder' { $script:html | Should -Not -Match '__COCKPIT_DATA__' }
+
+    It 'injects parseable JSON' { $script:payload | Should -Not -BeNullOrEmpty }
+
+    It 'computes KPIs from the device set' {
+        $script:payload.kpis.total         | Should -Be 5
+        $script:payload.kpis.compliancePct | Should -Be 60   # 3 compliant of 5
+        $script:payload.kpis.nonCompliant  | Should -Be 1
+        $script:payload.kpis.stale         | Should -Be 2    # the 45-day + the never-synced
+    }
+
+    It 'aggregates compliance into ordered good/warn/crit buckets' {
+        @($script:payload.compliance | ForEach-Object { $_.bucket }) | Should -Be @('good','warn','crit')
+    }
+
+    It 'passes an unavailable config count through as null' {
+        ($script:payload.config | Where-Object label -EQ 'Settings Catalog').value | Should -BeNullOrEmpty
+    }
+
+    It 'neutralizes a script-tag breakout in a device name' {
+        # Build the closing tag from char codes so no literal appears in the
+        # test source (a literal one confuses Pester's block instrumentation).
+        $lt = [char]0x3C; $gt = [char]0x3E
+        $evil = 'X' + $lt + '/script' + $gt                     # X</script>
+        $data2 = [pscustomobject]@{
+            Devices=@([pscustomobject]@{ deviceName=$evil; operatingSystem='Windows'; complianceState='noncompliant'; lastSyncDateTime=(Get-Date) })
+            Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        $h = ConvertTo-IntuneDashboardHtml -Data $data2
+        # The raw breakout sequence must not survive; the escaped form must.
+        $rawSurvived = $h.Contains($evil)
+        $escSurvived = $h.Contains('X' + [char]0x5C + 'u003c')  # X< present
+        $rawSurvived | Should -Be $false
+        $escSurvived | Should -Be $true
+    }
+
+    It 'does not throw on an empty device set' {
+        $empty = [pscustomobject]@{ Devices=@(); Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        { ConvertTo-IntuneDashboardHtml -Data $empty } | Should -Not -Throw
     }
 }
 
