@@ -157,7 +157,16 @@ Currently applied across `ToolkitRoot`, `OneDriveOrg`, `OhMyPoshTheme` (loader-o
 
 For complex per-machine logic that needs PowerShell expressions (network drive mappings, conditional paths, Test-Path checks), the answer is **`Machines/<COMPUTERNAME>.ps1`** — that file is regular PowerShell, dot-sourced after the config is applied, so it can extend any `$script:` variable with arbitrary expressions. The config.psd1 restriction is acceptable precisely because this escape hatch exists.
 
-### 13. Two test layers: smoke tests for load-state, unit tests for behavior
+### 13. Toolkit state lives under `Get-ToolkitDataPath`, and `AppData.ps1`'s filename is load-bearing
+
+Everything the toolkit persists per-machine (jump bookmarks, clip snippets, the posh-themes cache, the Intune cockpit HTML) lives under `%LOCALAPPDATA%\pwsh-toolkit`, resolved through `Get-ToolkitDataPath` in `Common/AppData.ps1` — never a hand-rolled `Join-Path $env:LOCALAPPDATA 'pwsh-toolkit'` literal, so a typo can't silently fork the data root. The helper ensures the root directory exists, which is why callers can bind file paths at load and write without ceremony.
+
+Two constraints keep this working:
+
+- The loader dot-sources `Common/*.ps1` **alphabetically**, and several files call the helper at load time to bind their `$script:` store paths — so `AppData.ps1` is *named* to sort before them. Renaming it (or adding a load-time caller that sorts earlier) breaks profile load.
+- Two places legitimately keep the literal because they run before Common/ exists: `install.ps1` (PS 5.1, standalone) and the loader's OhMyPosh branch. Both carry keep-in-sync comments.
+
+### 14. Two test layers: smoke tests for load-state, unit tests for behavior
 
 `tests/` has two complementary suites, and a new test belongs in exactly one of them depending on what it proves:
 
