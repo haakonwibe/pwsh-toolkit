@@ -180,3 +180,58 @@ Recommend (a). If after a week you wish it caught everything, then consider (b).
   depending on storage/secrets handling.
 - **Best for cross-folder organization:** `recent` — also unblocks "I downloaded
   something an hour ago, where did it go" cases.
+
+---
+
+# Bigger bets — beyond the CLI
+
+A different class from the helpers above: these change the *medium* or *mode*
+of the toolkit rather than adding another picker-driven verb. The insight is
+that the toolkit already computes genuinely valuable state (`Get-TenantOverview`,
+`Get-IntuneOverview`, `Get-AzureResourceCosts`) and then throws it at a terminal
+where it scrolls away. These bets reuse that data differently.
+
+## 5. Cockpit — a visual dashboard from data the toolkit already gathers — 🔨 Building
+
+**What:** Render the overview commands' output as a single at-a-glance visual
+dashboard instead of scrolling green text — compliance donut, stale devices
+called out, device-by-OS bars, a cost trend. Same data, different leverage.
+
+**Why it fits the arc:** Plays to an existing Blazor skill and a real Azure
+Static Web Apps hosting path. Prototype first as a self-contained HTML artifact
+(mock-but-realistic Intune numbers) to react to the actual thing; then decide
+whether to wire it to live `Get-IntuneOverview` output and, later, host it.
+
+**Open questions:** static snapshot (PowerShell writes an HTML file you open)
+vs a live hosted SWA reading Graph; how much to lean on the existing `/beta`
+Settings Catalog reads; whether cost data (Azure) and tenant data (Graph) share
+one board or split.
+
+## 6. Proactive tenant briefing — from "I invoke it" to "it watches"
+
+**What:** A scheduled agent that each morning diffs the tenant against yesterday
+and surfaces only what *changed* — new non-compliant devices, ones gone stale,
+a cost spike, secrets/certs nearing expiry. Push exceptions, don't pull status.
+
+**Why it fits the arc:** Turns the reactive overview commands into a proactive
+assistant. Builds on the existing `task`/scheduled-task surface (or a cloud
+routine). Needs a stored "yesterday" snapshot to diff against.
+
+## 7. Intune Win32 content-info module — package the research
+
+**What:** A focused module exposing Intune Win32 app content/delivery info that
+the portal doesn't surface (the `SideCar` / `CompanyPortalCatalog` /
+`Iw32LiveContentInfo` probing already done in practice). Community value; a
+sharper, publishable artifact than a personal convenience.
+
+**Why it fits the arc:** This is knowledge most admins never dig out. Separable
+from pwsh-toolkit — likely its own repo/module rather than a `Common/` helper.
+
+## 8. Conversational admin layer — natural language → Graph (wildcard)
+
+**What:** `ask -Do "devices not checked in for 30 days"` → generate the Graph
+query, run it, show the result. Natural language to Intune/Graph, in the shell.
+
+**Why it fits the arc:** Extends the existing Claude integration (`wtf`, `ask`,
+`tagdl`) from explanation into action. Highest variance — needs guardrails so a
+generated query is shown/confirmed before anything runs, and read-only by default.

@@ -69,6 +69,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 | **`sortdl`** | The hands to `tagdl`'s brain: reads `_downloads-index.csv` and files each tagged download at the Downloads root into a `~\Downloads\<Bucket>\` subfolder — nothing ever leaves Downloads. `Other` and untagged files stay at the root (a visible pile, not a junk drawer). Prints the move plan and asks before moving (defaults to No); `-WhatIf` previews only, `-Yes` skips the prompt for scheduled runs. Never overwrites (same-named files are reported as collisions and left in place). Every run is recorded, and `sortdl -Undo` reverses the last sort and removes the folders it emptied. |
 | **`dird` / `fr`** | Directory listings with the AI descriptions from `tagdl`, color-coded by extension and bucket. `dird` is alphabetical; `fr` is newest-first ("filelisting reverse" — BBS-style paging). |
 | **`recent`** | The "where did that file just go" view: the newest files across Downloads + Desktop (machine files can add folders) in one picker — age, name, source folder, and the `tagdl` description when one exists. Enter opens with the default app; archives are handed to `peek` instead. `recent 50` for a deeper list. |
+| **`cb`** | Clipboard snippet stash — the text you paste often (signature, address, a gnarly command), named and searchable, surviving reboots: what Win+V can't be. `cb -Add -Label sig` stashes the current clipboard under a name (upsert by label; identical text de-dupes); `cb` opens a picker and Enter copies the selection back to the clipboard; `cb <text>` copies the first label/content match directly; `cb -Remove <text>` drops one by label or content. Persisted as plaintext JSON under `%LOCALAPPDATA%` (labeled favorites are never auto-trimmed). Not a secret store — keep passwords in SecretStore. |
 | **`json`** | View JSON with syntax highlighting — `json <file.json>`, a piped JSON string (`gh api … \| json`), or any piped object (serialized first). Minified JSON is reflowed to indented form; `-Raw` shows the text verbatim (preserving JSONC comments + layout). Emits clean, uncolored JSON when redirected (`json x.json > pretty.json`), so it doubles as a formatter. |
 | **`Get-PubIP`** | Public IPv4 and IPv6 with multiple service fallbacks. |
 | **`Get-Uptime` / `Get-SysInfo`** | How long since last boot; an at-a-glance panel of host, OS (correct Win11 edition + display version + build), uptime, CPU, memory (with usage bar), GPU, and model. |
@@ -260,7 +261,7 @@ Test-WSMan target                          # WinRM actually responding?
 - **[`Profiles/Machines/README.md`](Profiles/Machines/README.md)** — per-machine configuration examples
 - **[`Profiles/Hosts/README.md`](Profiles/Hosts/README.md)** — per-host configuration examples
 - **[`CHANGELOG.md`](CHANGELOG.md)** — release history
-- **[`IDEAS.md`](IDEAS.md)** — candidate future helpers (`prj`, `recent`, `gcm`, `cb`)
+- **[`IDEAS.md`](IDEAS.md)** — the design record for candidate helpers (shipped: `prj`, `recent`, `cb`; shelved: `gcm`)
 
 ## Future direction
 
