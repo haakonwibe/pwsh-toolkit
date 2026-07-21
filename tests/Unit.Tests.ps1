@@ -1145,7 +1145,32 @@ Describe 'Intune Win32 app content info (mocked Graph)' {
                     @{ name = 'IntunePackage.intunewin'; size = 2MB; sizeEncrypted = 2.2MB; uploadState = 'commitFileSuccess'; isCommitted = $true; createdDateTime = '2026-07-01' }
                 ) }; break }
                 '*contentVersions*'         { @{ value = @(@{ id = '1' }, @{ id = '2' }) }; break }
-                '*mobileApps/a1*'           { @{ id = 'a1'; displayName = '7-Zip'; committedContentVersion = '2' }; break }
+                '*a1/installSummary*'       { @{ installedDeviceCount = 40; failedDeviceCount = 2; pendingInstallDeviceCount = 3; notInstalledDeviceCount = 5; notApplicableDeviceCount = 1 }; break }
+                '*a1/relationships*'        { @{ value = @(
+                    @{ '@odata.type' = '#microsoft.graph.win32LobAppSupersedence'; targetType = 'child';  supersedenceType = 'update';      targetDisplayName = '7-Zip 24.07' }
+                    @{ '@odata.type' = '#microsoft.graph.win32LobAppDependency';   targetType = 'child';  dependencyType   = 'autoInstall'; targetDisplayName = 'VC++ Redistributable' }
+                    @{ '@odata.type' = '#microsoft.graph.win32LobAppSupersedence'; targetType = 'parent';                                    targetDisplayName = '7-Zip 24.09' }
+                ) }; break }
+                '*a1/assignments*'          { @{ value = @(
+                    @{ intent = 'required';  target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget';          groupId = 'g1' } }
+                    @{ intent = 'available'; target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' } }
+                    @{ intent = 'required';  target = @{ '@odata.type' = '#microsoft.graph.exclusionGroupAssignmentTarget'; groupId = 'g1' } }
+                ) }; break }
+                '*groups/g1*'               { @{ displayName = 'Pilot Devices' }; break }
+                '*mobileApps/a1*'           { @{
+                    id = 'a1'; displayName = '7-Zip'; publisher = 'Igor Pavlov'; displayVersion = '24.08'
+                    publishingState = 'published'; isAssigned = $true; fileName = '7z.intunewin'; setupFilePath = '7z.msi'
+                    size = 2MB; committedContentVersion = '2'
+                    installCommandLine = 'msiexec /i 7z.msi /qn'; uninstallCommandLine = 'msiexec /x {ABC} /qn'
+                    installExperience = @{ runAsAccount = 'system'; deviceRestartBehavior = 'suppress'; maxRunTimeInMinutes = 60 }
+                    returnCodes = @(@{ returnCode = 0; type = 'success' }, @{ returnCode = 3010; type = 'softReboot' })
+                    msiInformation = @{ productCode = '{ABC}'; productVersion = '24.08'; upgradeCode = '{UPG}'; packageType = 'perMachine' }
+                    allowedArchitectures = 'x64,arm64'; minimumSupportedWindowsRelease = 'Windows11_23H2'; minimumFreeDiskSpaceInMB = 500
+                    rules = @(
+                        @{ '@odata.type' = '#microsoft.graph.win32LobAppRegistryRule';   ruleType = 'detection';   keyPath = 'HKLM\Software\7zip'; valueName = 'Version'; operationType = 'string'; operator = 'greaterThanOrEqual'; comparisonValue = '24.08' }
+                        @{ '@odata.type' = '#microsoft.graph.win32LobAppFileSystemRule'; ruleType = 'requirement'; path = 'C:\'; fileOrFolderName = 'pagefile.sys'; operationType = 'exists'; operator = 'notConfigured' }
+                    )
+                }; break }
                 '*mobileApps?*'             { @{ value = @(
                     @{ id = 'a1'; displayName = '7-Zip';        publisher = 'Igor Pavlov'; displayVersion = '24.08'; fileName = '7z.intunewin';     size = 2MB;   committedContentVersion = '2'; lastModifiedDateTime = '2026-07-01' }
                     @{ id = 'a2'; displayName = 'Adobe Reader'; publisher = 'Adobe';       displayVersion = '25.1';  fileName = 'reader.intunewin'; size = 300MB; committedContentVersion = '1'; lastModifiedDateTime = '2026-06-15' }
@@ -1189,6 +1214,56 @@ Describe 'Intune Win32 app content info (mocked Graph)' {
         Mock Get-MgContext { $null }
         $rows = @(Get-IntuneWin32App 3>$null)
         $rows | Should -BeNullOrEmpty
+    }
+
+    It 'assembles the full detail object' {
+        $d = Get-IntuneWin32AppDetail -Id 'a1'
+        $d.InstallContext | Should -Be 'system'
+        $d.MaxRunTimeMin  | Should -Be 60
+        $d.ReturnCodes    | Should -Contain '3010 softReboot'
+        $d.MsiUpgradeCode | Should -Be '{UPG}'
+        $d.Architectures  | Should -Be 'x64,arm64'
+        $d.FailedDevices  | Should -Be 2
+        $d.PendingDevices | Should -Be 3
+    }
+
+    It 'renders detection and requirement rules as readable one-liners' {
+        $d = Get-IntuneWin32AppDetail -Id 'a1'
+        $d.DetectionRules.Count | Should -Be 1
+        $d.DetectionRules[0]    | Should -Be 'registry: HKLM\Software\7zip\Version (string) greaterThanOrEqual 24.08'
+        $d.RequirementRules[0]  | Should -Be 'file: C:\pagefile.sys (exists)'
+    }
+
+    It 'phrases dependency and supersedence edges from this app''s viewpoint' {
+        $d = Get-IntuneWin32AppDetail -Id 'a1'
+        $arrow = [char]0x2192; $back = [char]0x2190
+        $d.Relationships | Should -Contain "supersedes (update) $arrow 7-Zip 24.07"
+        $d.Relationships | Should -Contain "depends on (autoInstall) $arrow VC++ Redistributable"
+        $d.Relationships | Should -Contain "superseded by $back 7-Zip 24.09"
+    }
+
+    It 'resolves assignment groups once via the cache, exclusions negated' {
+        $d = Get-IntuneWin32AppDetail -Id 'a1'
+        $arrow = [char]0x2192
+        $d.Assignments | Should -Contain "required $arrow Pilot Devices"
+        $d.Assignments | Should -Contain "available $arrow All devices"
+        $d.Assignments | Should -Contain "required $arrow NOT Pilot Devices"
+        # Two assignments reference g1, but the per-invocation cache means one lookup.
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*groups/*' }
+    }
+
+    It 'keeps rendering when a side read is denied' {
+        Mock Invoke-MgGraphRequest {
+            switch -Wildcard ($Uri) {
+                '*installSummary*' { throw '403 Forbidden'; break }
+                '*relationships*'  { @{ value = @() }; break }
+                '*assignments*'    { @{ value = @() }; break }
+                default            { @{ id = 'a1'; displayName = '7-Zip'; committedContentVersion = '2' } }
+            }
+        }
+        $d = Get-IntuneWin32AppDetail -Id 'a1'
+        $d.App | Should -Be '7-Zip'
+        $d.FailedDevices | Should -BeNullOrEmpty
     }
 }
 
