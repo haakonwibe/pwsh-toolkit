@@ -13,10 +13,11 @@
 # present fallback. Set OhMyPoshTheme = 'Random' in config.psd1 to roll a
 # different theme each shell (the loader announces which one so you can pin it).
 
-# Mirror of the path the loader uses in pwsh-toolkit-profile.ps1's OhMyPosh
-# branch (the loader runs before Common/ is dot-sourced, so it can't call into
-# here — keep the two in sync).
-$script:PoshThemeCache = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit\PoshThemes'
+# The loader's OhMyPosh branch in pwsh-toolkit-profile.ps1 mirrors this path
+# with a literal (it runs before Common/ is dot-sourced, so Get-ToolkitDataPath
+# isn't defined there yet — keep the two in sync). The helper only guarantees
+# the ROOT dir; the PoshThemes subdir is created when the gallery downloads.
+$script:PoshThemeCache = Get-ToolkitDataPath 'PoshThemes'
 
 function Get-PoshThemePool {
     <#

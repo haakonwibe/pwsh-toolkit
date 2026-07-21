@@ -24,7 +24,7 @@
 # dot-sourced into the same session, so it's defined by the time `cb` runs
 # interactively (and the unit suite dot-sources Recent.ps1 alongside this file).
 
-$script:ClipSnippetFile = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit\clipboard-snippets.json'
+$script:ClipSnippetFile = Get-ToolkitDataPath 'clipboard-snippets.json'
 
 function ConvertTo-SnippetStamp {
     # Normalize an Added value to an invariant ISO-8601 round-trip ('o') string.
@@ -100,9 +100,7 @@ function Save-ClipSnippet {
     # the callers; this just normalizes and persists.
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Snippet)
 
-    $dir = Split-Path -Parent $script:ClipSnippetFile
-    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-
+    # The data dir is guaranteed by Get-ToolkitDataPath at path-bind time.
     # -AsArray (piped, so it enumerates) keeps a single snippet as a one-element
     # JSON array; a bare object would make Get-ClipSnippet's @() wrap it wrong on
     # the next read. An empty list must serialize as '[]', not '' — an empty

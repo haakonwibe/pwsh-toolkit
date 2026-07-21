@@ -155,7 +155,7 @@ if ($script:Config -and $script:Config.ExtraJumpFolders) {
 # machine file just to remember a folder. Stored as JSON (not PowerShell) so it's
 # safe to rewrite from code, under %LOCALAPPDATA% alongside the other per-machine
 # toolkit state (the PoshThemes cache) rather than in the repo tree.
-$script:JumpBookmarkFile = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit\jump-bookmarks.json'
+$script:JumpBookmarkFile = Get-ToolkitDataPath 'jump-bookmarks.json'
 
 function Get-JumpBookmark {
     # Read the saved bookmarks. A missing, empty, or corrupt file yields an empty
@@ -182,9 +182,7 @@ function Get-JumpBookmark {
 function Save-JumpBookmark {
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Bookmark)
 
-    $dir = Split-Path -Parent $script:JumpBookmarkFile
-    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-
+    # The data dir is guaranteed by Get-ToolkitDataPath at path-bind time.
     # Normalize to plain Label/Path objects, then serialize as a JSON array.
     # -AsArray (piped, so it enumerates) keeps a single bookmark as a one-element
     # array; the empty case is written literally, because piping nothing to

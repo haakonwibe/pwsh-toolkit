@@ -92,7 +92,9 @@ if ($null -eq $script:Config.OneDriveOrg) {
 if ($script:Config.Prompt -eq 'OhMyPosh') {
     # Theme sources: the downloaded gallery cache (Update-PoshThemes) and the
     # bundled Profiles/OhMyPosh/ folder. This runs before Common/ is dot-sourced,
-    # so the cache path is mirrored here from Common/PoshThemes.ps1 — keep in sync.
+    # so Get-ToolkitDataPath (Common/AppData.ps1) isn't defined yet — the cache
+    # path is mirrored here as a literal. Keep in sync with AppData.ps1's root
+    # and PoshThemes.ps1's 'PoshThemes' child.
     $themeName  = $script:Config.OhMyPoshTheme
     $bundledDir = Join-Path $script:ProfileRoot 'OhMyPosh'
     $cacheDir   = Join-Path $env:LOCALAPPDATA 'pwsh-toolkit\PoshThemes'

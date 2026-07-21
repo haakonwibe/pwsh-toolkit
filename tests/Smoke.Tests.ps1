@@ -25,7 +25,9 @@ BeforeAll {
         $content = @"
 `$env:PSPROFILE_NO_TIPS = '1'
 `$Error.Clear()
+`$sw = [System.Diagnostics.Stopwatch]::StartNew()
 . '$LoaderPath'
+`$sw.Stop()
 `$loadErrors = @(`$Error | ForEach-Object { `$_.ToString() })
 
 `$expectedCommands = @(
@@ -110,6 +112,7 @@ Pop-Location
     JLiteralLanded        = `$jLiteralLanded
     JLiteralErrors        = `$jLiteralErrors
     JBadMatchErrors       = `$jBadMatchErrors
+    LoadMs            = `$sw.ElapsedMilliseconds
     ConfigToolkitRoot = `$script:Config.ToolkitRoot
     ConfigPrompt      = `$script:Config.Prompt
     JumpFolderCount   = `$script:JumpFolders.Count
@@ -268,6 +271,20 @@ Describe 'Per-host prompt override (a Hosts file swaps OMP for Custom)' {
 
     It 'loads cleanly' {
         $script:HostPromptProbe.LoadErrors | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Profile startup budget' {
+    # A pathology detector, not a perf gate: local loads run ~2s and CI runners
+    # are slower and noisy, so the budget sits where only a real regression can
+    # reach it — an accidental heavyweight module import at load, a network
+    # call waiting out its timeout, a directory scan walking the wrong root.
+    It 'Custom-mode load stays under 8 seconds' {
+        $script:CustomProbe.LoadMs | Should -BeLessThan 8000
+    }
+
+    It 'OhMyPosh-mode load stays under 8 seconds' {
+        $script:OmpProbe.LoadMs | Should -BeLessThan 8000
     }
 }
 

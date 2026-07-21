@@ -30,6 +30,7 @@ BeforeAll {
         ProjectRoots  = @()
     }
 
+    . (Join-Path $commonDir 'AppData.ps1')        # Get-ToolkitDataPath — must precede the files that bind store paths at load
     . (Join-Path $commonDir 'Aliases.ps1')        # touch, which, ll, la, ask
     . (Join-Path $commonDir 'Navigation.ps1')     # mkcd, up
     . (Join-Path $commonDir 'Recent.ps1')         # Get-RecentFile, Format-FileAge (needs Navigation's $script:OneDrivePath)
@@ -1055,6 +1056,71 @@ Describe 'Get-IntuneOverview dashboard render' {
 
     It 'carries the stale threshold in the payload for the template labels' {
         $script:payload.meta.staleDays | Should -Be 30
+    }
+}
+
+Describe 'Get-IntuneOverviewData (mocked Graph)' {
+
+    BeforeAll {
+        # Stub the two Graph commands so Pester has something to Mock — the real
+        # ones live in Microsoft.Graph.Authentication, which this suite must not
+        # require. (On a dev box with the module installed, the function stubs
+        # shadow the cmdlets, so the mocks win either way.)
+        # The param block matters: Pester builds the mock's binding from this
+        # signature, so the real calls' -Method/-Uri/-ErrorAction must bind.
+        function Invoke-MgGraphRequest { param($Method, $Uri, $ErrorAction) throw "stub not mocked: $Method $Uri (ErrorAction=$ErrorAction)" }
+        function Get-MgContext { }
+    }
+
+    It 'follows @odata.nextLink across pages' {
+        Mock Invoke-MgGraphRequest {
+            if ($Uri -like '*page2*') { @{ value = @(@{ id = 3 }) } }
+            else { @{ value = @(@{ id = 1 }, @{ id = 2 }); '@odata.nextLink' = 'v1.0/x?page2' } }
+        }
+        @(Get-MgGraphAllPage -Uri 'v1.0/x').Count | Should -Be 3
+    }
+
+    It 'returns a structured Error (no throw, no console UX) when the device read fails' {
+        Mock Get-MgContext { [pscustomobject]@{ Account = 'ga@contoso.com'; TenantId = 'tid' } }
+        Mock Invoke-MgGraphRequest { throw "Insufficient privileges to complete the operation.`nSecond line of detail" }
+        $r = Get-IntuneOverviewData
+        $r.Error   | Should -Be 'Insufficient privileges to complete the operation.'
+        $r.Devices | Should -BeNullOrEmpty
+    }
+
+    It 'keeps the config count when only the compliance-policy count fails' {
+        # The two v1.0 counts fetch in separate try blocks — a throttled or
+        # denied compliance-policy read must not blank a config count that
+        # already succeeded (and vice versa).
+        Mock Get-MgContext { [pscustomobject]@{ Account = 'ga@contoso.com'; TenantId = 'tid' } }
+        Mock Invoke-MgGraphRequest {
+            switch -Wildcard ($Uri) {
+                '*managedDevices*'           { @{ value = @(@{ deviceName = 'PC-1'; operatingSystem = 'Windows'; complianceState = 'compliant'; lastSyncDateTime = (Get-Date) }) } }
+                '*deviceConfigurations*'     { @{ value = @(@{ id = '1' }, @{ id = '2' }) } }
+                '*deviceCompliancePolicies*' { throw '429 Too Many Requests' }
+                '*configurationPolicies*'    { @{ value = @() } }
+                '*mobileApps*'               { @{ value = @(@{ id = 'a' }) } }
+            }
+        }
+        $r = Get-IntuneOverviewData
+        $r.Error              | Should -BeNullOrEmpty
+        $r.Configs            | Should -Be 2
+        $r.CompliancePolicies | Should -BeNullOrEmpty   # failed -> null (unavailable)
+        $r.Catalog            | Should -Be 0            # empty  -> 0 (a real count)
+        $r.Apps               | Should -Be 1
+        $r.Devices.Count      | Should -Be 1
+    }
+
+    It 'labels the tenant from the signed-in account domain' {
+        Mock Get-MgContext { [pscustomobject]@{ Account = 'ga@contoso.com'; TenantId = 'tid-guid' } }
+        Mock Invoke-MgGraphRequest { @{ value = @() } }
+        (Get-IntuneOverviewData).Tenant | Should -Be 'contoso.com'
+    }
+
+    It 'falls back to the tenant id when no account is present (app-only session)' {
+        Mock Get-MgContext { [pscustomobject]@{ Account = $null; TenantId = 'tid-guid' } }
+        Mock Invoke-MgGraphRequest { @{ value = @() } }
+        (Get-IntuneOverviewData).Tenant | Should -Be 'tid-guid'
     }
 }
 
