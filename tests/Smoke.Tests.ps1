@@ -45,7 +45,8 @@ BeforeAll {
     'task',
     'wtf',
     'note','today','Find-Note','Set-NotesRoot',
-    'ask','ll','la','lh','touch','which'
+    'ask','ll','la','lh','touch','which',
+    'apps','uninst','Get-InstalledApp','Uninstall-App'
 )
 `$missingCommands = @(`$expectedCommands | Where-Object { -not (Get-Command `$_ -ErrorAction Ignore) })
 

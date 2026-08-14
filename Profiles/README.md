@@ -166,6 +166,15 @@ OneDrive paths use `$Config.OneDriveOrg` (auto-detected from `$env:OneDriveComme
 - `df` - Disk free overview with colored usage bars (green ≤70%, yellow 71-89%, red ≥90%). Fixed drives only by default; `df -All` adds removable, network, and CD-ROM. Sorted by drive letter
 - `Format-ByteSize <bytes>` - Format a byte count as a human-readable size (e.g. `31.5 GB`). `-DecimalUnits` picks which units get a decimal, `-Width` right-aligns for tables. Shared by `Get-SysInfo` and `df`
 
+**Installed apps:**
+- `apps` - List installed applications exactly as Programs and Features shows them. Reads the 64-bit, 32-bit and per-user `Uninstall` registry hives and applies the shell's own visibility rules (no patches, no driver sub-entries, no `SystemComponent` keys) — on a typical machine that's ~150 apps out of ~330 raw keys
+- `apps <name>` - Filter by display-name substring (`*`/`?` are honored as wildcards); `-Publisher <name>` does the same for the publisher, `-SilentOnly` keeps just the unattended-capable ones, `-All` includes the entries Windows hides
+- Each app carries `Silent` — whether it can be removed without a GUI, i.e. the publisher registered a `QuietUninstallString` or it's an MSI (whose `/qn` syntax is universal). Also `Scope` (Machine/User), `SizeMB`, `InstallDate`, `ProductCode`, `InstallLocation`, and both uninstall strings
+- `uninst` - Picker over every installed app, then runs the selected one's uninstaller (`*` marks silent-capable, `!` marks the ones that force their own UI). `uninst <name>` matches by substring, falling back to a picker over the candidates when more than one matches
+- `uninst <name> -Silent` - Unattended removal via the publisher's quiet command, or MSI `/x {code} /qn /norestart`. A silent switch is never *guessed* — `/S`, `/SILENT` and `--uninstall-silent` belong to different installer toolkits, so apps that publish none get a clear explanation instead
+- Confirms before removing (it's irreversible); `-WhatIf` prints the exact command line and runs nothing, `-Confirm:$false` scripts it. `apps -Publisher X | uninst` pipes
+- Not covered: MSIX/Store apps, which Windows also keeps out of Programs and Features — use `Get-AppxPackage` / `Remove-AppxPackage` for those
+
 **Remote Servers:**
 - `rdp [name]` - Remote Desktop (mstsc). No arg opens a picker over `config.psd1`'s `RemoteServers`; `rdp <name>` fuzzy-matches label/address first, then falls back to a literal address (so `rdp 10.0.0.5` works without a bookmark)
 - `rps [name]` - Same picker/matching, but PowerShell Remoting (Enter-PSSession). Pre-fills `Get-Credential` from the entry's `User`; translates WinRM failures into specific fixes (TrustedHosts, access denied, unreachable)

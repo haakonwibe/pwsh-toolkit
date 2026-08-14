@@ -45,6 +45,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Catalog.ps1')         # Get-ToolkitCommand
     . (Join-Path $commonDir 'Json.ps1')            # Show-Json + Format-JsonColor
     . (Join-Path $commonDir 'ScheduledTasks.ps1')  # Format-TaskResult, Test-ToolkitTaskVisible
+    . (Join-Path $commonDir 'InstalledApps.ps1')   # Test-ArpEntryVisible, Split-UninstallCommand, Resolve-UninstallCommand
     . (Join-Path $repoRoot 'Profiles/M365/IntuneManagement.ps1')  # Get-ComplianceBucket, ConvertTo-IntuneDashboardHtml (defining these needs no Graph)
     . (Join-Path $repoRoot 'Profiles/M365/IntuneWin32Apps.ps1')   # Get-IntuneWin32App, Get-IntuneWin32AppContentInfo (mocked below)
 }
@@ -1476,5 +1477,221 @@ Describe 'Test-ToolkitTaskVisible (default scope excludes \Microsoft)' {
     }
     It '-IncludeAll shows everything, including \Microsoft\*' {
         Test-ToolkitTaskVisible -TaskPath '\Microsoft\Windows\Defrag\' -IncludeAll | Should -BeTrue
+    }
+}
+
+Describe 'Test-ArpEntryVisible (Programs and Features visibility rules)' {
+
+    # A minimal entry that should pass every rule, cloned and spoiled per test.
+    BeforeEach {
+        $script:entry = [pscustomobject]@{
+            DisplayName     = 'Contoso Widget'
+            UninstallString = 'C:\Program Files\Contoso\uninst.exe'
+        }
+    }
+
+    It 'shows an ordinary application' {
+        Test-ArpEntryVisible -Entry $entry | Should -BeTrue
+    }
+    It 'hides a nameless key (install metadata, not an app)' {
+        $entry.DisplayName = $null
+        Test-ArpEntryVisible -Entry $entry | Should -BeFalse
+    }
+    It 'hides SystemComponent entries' {
+        $entry | Add-Member SystemComponent 1
+        Test-ArpEntryVisible -Entry $entry | Should -BeFalse
+    }
+    It 'hides child entries that nest under a parent product' {
+        $entry | Add-Member ParentKeyName 'Office16'
+        Test-ArpEntryVisible -Entry $entry | Should -BeFalse
+    }
+    It 'hides updates and hotfixes by ReleaseType' {
+        foreach ($t in 'Security Update', 'Update Rollup', 'Hotfix', 'ServicePack') {
+            $e = [pscustomobject]@{ DisplayName = 'KB123'; UninstallString = 'x.exe'; ReleaseType = $t }
+            Test-ArpEntryVisible -Entry $e | Should -BeFalse -Because "$t is an update, not a product"
+        }
+    }
+    It 'keeps an entry whose ReleaseType is a normal product value' {
+        $entry | Add-Member ReleaseType 'Full'
+        Test-ArpEntryVisible -Entry $entry | Should -BeTrue
+    }
+    It 'hides a stale record with no way to uninstall it' {
+        $entry.UninstallString = $null
+        Test-ArpEntryVisible -Entry $entry | Should -BeFalse
+    }
+    It 'accepts an entry that only has a quiet uninstall string' {
+        $entry.UninstallString = $null
+        $entry | Add-Member QuietUninstallString 'x.exe /S'
+        Test-ArpEntryVisible -Entry $entry | Should -BeTrue
+    }
+    It '-IncludeHidden keeps everything except nameless keys' {
+        $entry | Add-Member SystemComponent 1
+        Test-ArpEntryVisible -Entry $entry -IncludeHidden | Should -BeTrue
+
+        $nameless = [pscustomobject]@{ DisplayName = $null }
+        Test-ArpEntryVisible -Entry $nameless -IncludeHidden | Should -BeFalse
+    }
+    It 'rejects a null entry rather than throwing' {
+        Test-ArpEntryVisible -Entry $null | Should -BeFalse
+    }
+}
+
+Describe 'Split-UninstallCommand (uninstall command-line parsing)' {
+
+    # The unquoted-with-spaces case can only be resolved against a real
+    # filesystem, so these tests build one: "<temp>/Program Files X/app.exe".
+    BeforeAll {
+        $script:appDir = Join-Path ([IO.Path]::GetTempPath()) ("uninst-ut-" + [Guid]::NewGuid().ToString('N'))
+        $script:spaced = Join-Path $appDir 'Program Files X'
+        New-Item -ItemType Directory -Path $spaced -Force | Out-Null
+        $script:exePath = Join-Path $spaced 'uninstall.exe'
+        Set-Content -LiteralPath $exePath -Value 'stub' -Encoding ascii
+    }
+    AfterAll {
+        Remove-Item -LiteralPath $appDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'splits a quoted executable from its arguments' {
+        $r = Split-UninstallCommand '"C:\Program Files\Git\unins000.exe" /SILENT'
+        $r.FilePath  | Should -Be 'C:\Program Files\Git\unins000.exe'
+        $r.Arguments | Should -Be '/SILENT'
+    }
+    It 'handles a quoted executable with no arguments' {
+        $r = Split-UninstallCommand '"C:\Program Files\Mozilla Firefox\uninstall\helper.exe"'
+        $r.FilePath  | Should -Be 'C:\Program Files\Mozilla Firefox\uninstall\helper.exe'
+        $r.Arguments | Should -Be ''
+    }
+    It 'resolves an unquoted path containing spaces against the filesystem' {
+        # The naive "split on the first space" answer would be "<temp>/Program".
+        $r = Split-UninstallCommand $exePath
+        $r.FilePath  | Should -Be $exePath
+        $r.Arguments | Should -Be ''
+    }
+    It 'does not leak a path fragment into Arguments when the exe is the last token' {
+        # Regression guard: $tokens[$n..($n-1)] counts DOWNWARD in PowerShell, so
+        # the empty-tail case used to return the final path token as an argument
+        # ("Files\WinRAR\uninstall.exe" for C:\Program Files\WinRAR\uninstall.exe).
+        $r = Split-UninstallCommand $exePath
+        $r.Arguments | Should -Not -Match 'Program|uninstall\.exe'
+    }
+    It 'keeps arguments after an unquoted path containing spaces' {
+        $r = Split-UninstallCommand "$exePath /S --force"
+        $r.FilePath  | Should -Be $exePath
+        $r.Arguments | Should -Be '/S --force'
+    }
+    It 'treats a bare command name as PATH-resolved' {
+        $r = Split-UninstallCommand 'MsiExec.exe /X{0DDC55F3-E24B-40CC-A90D-B1E89C5DB035}'
+        $r.FilePath  | Should -Be 'MsiExec.exe'
+        $r.Arguments | Should -Be '/X{0DDC55F3-E24B-40CC-A90D-B1E89C5DB035}'
+    }
+    It 'handles a multi-argument PATH command (the rundll32 driver form)' {
+        $r = Split-UninstallCommand 'rundll32.exe setupapi,InstallHinfSection DefaultUninstall 132 C:\windows\INF\ZMBV.INF'
+        $r.FilePath  | Should -Be 'rundll32.exe'
+        $r.Arguments | Should -Be 'setupapi,InstallHinfSection DefaultUninstall 132 C:\windows\INF\ZMBV.INF'
+    }
+    It 'recovers from an unbalanced quote instead of throwing' {
+        $r = Split-UninstallCommand '"C:\Tools\x.exe /S'
+        $r.FilePath | Should -Not -BeNullOrEmpty
+    }
+    It 'returns nothing for empty or whitespace input' {
+        Split-UninstallCommand ''    | Should -BeNullOrEmpty
+        Split-UninstallCommand '   ' | Should -BeNullOrEmpty
+        Split-UninstallCommand $null | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Resolve-UninstallCommand (interactive vs unattended)' {
+
+    BeforeAll {
+        $script:msiApp = [pscustomobject]@{
+            Name = 'ColorEngine'; ProductCode = '{0B48E952-494A-408B-8D9D-5F3331F96659}'
+            UninstallString = 'MsiExec.exe /I{0B48E952-494A-408B-8D9D-5F3331F96659}'
+            QuietUninstallString = $null
+        }
+        $script:quietApp = [pscustomobject]@{
+            Name = 'CPU-Z'; ProductCode = $null
+            UninstallString      = '"C:\Program Files\CPUID\CPU-Z\unins000.exe"'
+            QuietUninstallString = '"C:\Program Files\CPUID\CPU-Z\unins000.exe" /SILENT'
+        }
+        $script:stubbornApp = [pscustomobject]@{
+            Name = 'Mozilla Firefox'; ProductCode = $null
+            UninstallString      = '"C:\Program Files\Mozilla Firefox\uninstall\helper.exe"'
+            QuietUninstallString = $null
+        }
+    }
+
+    It 'rewrites MSI /I to /x — /I opens the maintenance dialog, not an uninstall' {
+        $r = Resolve-UninstallCommand -App $msiApp
+        $r.Arguments | Should -BeLike '/x {0B48E952-*'
+        $r.Arguments | Should -Not -Match '/I'
+    }
+    It 'synthesises a silent MSI removal even with no quiet string published' {
+        $r = Resolve-UninstallCommand -App $msiApp -Silent
+        $r.Silent    | Should -BeTrue
+        $r.FilePath  | Should -Be 'msiexec.exe'
+        $r.Arguments | Should -BeLike '/x {0B48E952-*/qn /norestart'
+    }
+    It 'prefers the publisher-supplied quiet command for -Silent' {
+        $r = Resolve-UninstallCommand -App $quietApp -Silent
+        $r.Silent    | Should -BeTrue
+        $r.Arguments | Should -Be '/SILENT'
+    }
+    It 'uses the plain uninstall string when -Silent is not asked for' {
+        $r = Resolve-UninstallCommand -App $quietApp
+        $r.Silent    | Should -BeFalse
+        $r.Arguments | Should -Be ''
+    }
+    It 'refuses to guess a silent switch, and explains why' {
+        $r = Resolve-UninstallCommand -App $stubbornApp -Silent
+        $r.FilePath | Should -BeNullOrEmpty
+        $r.Reason   | Should -Match 'cannot be removed unattended'
+        $r.Reason   | Should -Match 'Mozilla Firefox'
+    }
+    It 'reports a missing uninstall string rather than returning a broken command' {
+        $r = Resolve-UninstallCommand -App ([pscustomobject]@{ Name = 'Ghost'; UninstallString = $null; ProductCode = $null })
+        $r.FilePath | Should -BeNullOrEmpty
+        $r.Reason   | Should -Match 'No UninstallString'
+    }
+}
+
+Describe 'Get-InstalledApp (against the live registry)' {
+
+    BeforeAll { $script:installed = @(Get-InstalledApp) }
+
+    It 'finds applications on this machine' {
+        $installed.Count | Should -BeGreaterThan 0
+    }
+    It 'never returns an entry without a name or a way to remove it' {
+        foreach ($a in $installed) {
+            $a.Name | Should -Not -BeNullOrEmpty
+            ($a.UninstallString -or $a.QuietUninstallString) | Should -BeTrue -Because "$($a.Name) must be removable to be listed"
+        }
+    }
+    It 'reports Silent only when a quiet command or a product code backs it' {
+        foreach ($a in $installed | Where-Object Silent) {
+            ($a.QuietUninstallString -or $a.ProductCode) | Should -BeTrue -Because "$($a.Name) claims Silent"
+        }
+    }
+    It 'parses every product code as a GUID' {
+        foreach ($a in $installed | Where-Object ProductCode) {
+            $a.ProductCode | Should -Match '^\{[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}\}$'
+        }
+    }
+    It '-All is a superset of the default view' {
+        @(Get-InstalledApp -All).Count | Should -BeGreaterOrEqual $installed.Count
+    }
+    It 'filters by name as a substring, case-insensitively' {
+        $first = $installed[0].Name
+        $frag  = $first.Substring(0, [Math]::Min(6, $first.Length)).ToLower()
+        @(Get-InstalledApp -Name $frag).Name | Should -Contain $first
+    }
+    It 'returns nothing (without throwing) for a name that matches nothing' {
+        @(Get-InstalledApp -Name 'zzz-no-such-app-zzz').Count | Should -Be 0
+    }
+    It 'does not throw on wildcard metacharacters in a plain name' {
+        { Get-InstalledApp -Name 'C++ [x64]' } | Should -Not -Throw
+    }
+    It '-SilentOnly returns only unattended-capable apps' {
+        foreach ($a in Get-InstalledApp -SilentOnly) { $a.Silent | Should -BeTrue }
     }
 }
