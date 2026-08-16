@@ -443,14 +443,24 @@ function Uninstall-App {
                 # Shared picker (ARCHITECTURE convention 6) — never a hand-rolled
                 # menu loop. Name column padded to a common width, captured by
                 # GetNewClosure so the render block keeps it.
-                $nameWidth = [Math]::Min(48, ($candidates | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum)
+                # Both columns are sized from the candidates actually on screen and
+                # capped, so one long value can't shove every publisher out of
+                # alignment. A fixed version pad did exactly that: four-segment
+                # builds like OneDrive's 26.139.0720.0007 overflow 14 characters,
+                # and only that row's publisher shifted right.
+                $nameWidth    = [Math]::Min(48, ($candidates | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum)
+                $versionWidth = [Math]::Min(16, ($candidates | ForEach-Object { ([string]$_.Version).Length } | Measure-Object -Maximum).Maximum)
                 $render = {
                     param($a)
                     $label = if ($a.Name.Length -gt $nameWidth) { $a.Name.Substring(0, $nameWidth) } else { $a.Name.PadRight($nameWidth) }
+                    # [string] rather than ?? '': DisplayVersion is occasionally a
+                    # REG_DWORD, and an [int] has no PadRight to call.
+                    $version = [string]$a.Version
+                    $version = if ($version.Length -gt $versionWidth) { $version.Substring(0, $versionWidth) } else { $version.PadRight($versionWidth) }
                     # Version dark gray, publisher dimmer still; a red dot marks
                     # the apps that will force their own UI on you.
                     $mark = if ($a.Silent) { "`e[32m*`e[0m" } else { "`e[31m!`e[0m" }
-                    "{0} {1}  `e[90m{2}`e[0m  `e[90m{3}`e[0m" -f $mark, $label, ($a.Version ?? '').PadRight(14), $a.Publisher
+                    "{0} {1}  `e[90m{2}`e[0m  `e[90m{3}`e[0m" -f $mark, $label, $version, $a.Publisher
                 }.GetNewClosure()
 
                 $title = if ($Name) { "Uninstall — $($candidates.Count) apps matching '$Name'" }
