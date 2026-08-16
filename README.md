@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://haakonwibe.github.io/pwsh-toolkit/poster.html">
-    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 61 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
+    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 66 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
   </a>
 </p>
 <p align="center">
@@ -113,6 +113,12 @@ A fresh tab: rotating profile tip on top, the polished Oh My Posh prompt with `p
 
 Press `1`-`9` for an instant jump, or arrow + Enter. Renders on the terminal's alternate screen buffer so your scrollback stays intact when the picker exits. `j <text>` (or any literal path) skips the picker entirely. Add your own destinations on the fly with `j -Add` (bookmarks the current folder) and drop them with `j -Remove <label>` — no config file to edit.
 
+### Clipboard snippets (`cb`)
+
+![cb picker listing saved clipboard snippets](docs/screenshots/cb.png)
+
+`j` bookmarks, but for text. Enter copies the highlighted snippet to the clipboard — reliable auto-paste isn't possible from the alternate screen buffer, so you `Ctrl+V` it yourself, same as Win+V effectively does. `cb -Add -Label sig` names a snippet (upsert by label, so re-using a name repoints it); unlabeled entries show by their first line, and multi-line blobs carry an `(N lines)` marker. `cb <text>` matches on label *or* content and copies without opening the picker. Snippets persist as plaintext JSON under `%LOCALAPPDATA%\pwsh-toolkit\`, capped at 100 with the oldest *unlabeled* entries trimmed first — labeled favorites are never auto-dropped. Deliberately not a background clipboard watcher and not a secret store: passwords and tokens belong in SecretStore.
+
 ### Disk-free overview (`df`)
 
 ![df with colored usage bars](docs/screenshots/df.png)
@@ -131,6 +137,17 @@ Dispatches to WinRAR for `.rar`, 7-Zip for everything else, and falls back to `E
 
 Space to toggle, A toggles all, Enter to confirm. CMTrace-XML logs land in `C:\ProgramData\WingetUpgrade\Logs\`. `winup -All` skips the picker. `winup -Elevated` re-runs it elevated through a real `sudo` (gsudo or Windows' built-in `sudo`, falling back to a new elevated window) so you approve one UAC prompt up front rather than one per package. PowerShell can't upgrade itself in-process without Restart Manager closing the running session, so it's deferred to a detached process and the rest of the batch finishes first — details in [`WingetUpgrade/README.md`](WingetUpgrade/README.md).
 
+### Uninstall applications (`uninst`)
+
+![uninst picker listing installed applications](docs/screenshots/uninst.png)
+
+`*` marks apps that can be removed unattended; `!` marks the ones that will force their own installer UI on you regardless. Enter runs the selected app's uninstaller, and `uninst <name>` matches by substring, falling back to a picker over the candidates when more than one matches. `-Silent` uses the publisher's own `QuietUninstallString` or synthesises MSI `/x {code} /qn /norestart` — and tells you no unattended path exists rather than guessing a switch, since `/S`, `/SILENT`, and `--uninstall-silent` belong to different installer toolkits and the wrong one can drop you back to an interactive installer. Removal is irreversible, so it confirms first; `-WhatIf` prints the exact command line it would run. The list behind it is `apps`: the same three `Uninstall` registry hives Programs and Features reads, filtered by the same visibility rules the shell applies.
+
+### Intune cockpit (`Get-IntuneOverview -AsDashboard`)
+
+![Intune cockpit dashboard: compliance donut, devices by platform, stale and non-compliant device callouts, and configuration counts](docs/screenshots/cockpit.png)
+
+The same read-only Intune snapshot as a visual board rather than scrolling console text — compliance as a donut with a labelled legend, devices by platform, the stale and non-compliant devices called out by name, and the configuration surface underneath. It writes a self-contained HTML file to `%LOCALAPPDATA%\pwsh-toolkit\intune-cockpit.html` and opens it: styles, scripts, and fonts are all inline, so the page makes no network requests and nothing leaves the machine. The console and dashboard paths share a single Graph gather, so the two views can't drift apart, and a device name containing `</script>` can't break out of the embedded data. Shown here with synthetic data.
 
 ---
 
@@ -179,7 +196,7 @@ The profile loads fine without any of these — the relevant feature just stays 
 
 | Want | Install |
 |---|---|
-| `Prompt = 'OhMyPosh'` (the polished prompt) | `.\install.ps1 -InstallOhMyPosh` does the whole setup. (Manual: `winget install JanDeDobbeleer.OhMyPosh` + `oh-my-posh font install Meslo --user` + `Install-Module Terminal-Icons`.) |
+| `Prompt = 'OhMyPosh'` (the polished prompt) | `.\install.ps1 -InstallOhMyPosh` does the whole setup. (Manual: `winget install JanDeDobbeleer.OhMyPosh` + `oh-my-posh font install Meslo` + `Install-Module Terminal-Icons`.) |
 | `tagdl` (AI Downloads tagger) and `wtf` (Claude-powered error explainer) | `Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore`, then store an `Anthropic-API-Key` secret with `Get-OrCreateSecret -Name 'Anthropic-API-Key'`. Both reuse the same key. |
 | `peek` for `.rar` / `.7z` / `.tar.gz` / ISO / etc. (not just `.zip`) | `winget install 7zip.7zip` (and/or WinRAR for `.rar`) |
 | M365 helpers (`Connect-Tenant`, `Get-TenantOverview`) | `Install-Module Microsoft.Graph, ExchangeOnlineManagement` |

@@ -86,7 +86,7 @@
                         <span class="text-sm text-gray-300">Open Source • MIT License</span>
                     </div>
                     <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
-                        <span class="text-sm mono font-semibold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">v0.6.0</span>
+                        <span class="text-sm mono font-semibold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">v0.6.1</span>
                     </div>
                 </div>
 
@@ -101,7 +101,7 @@
 
                 <div class="flex flex-wrap items-center justify-center gap-8 sm:gap-12 mb-10">
                     <div class="text-center">
-                        <div class="text-5xl font-black bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent leading-none">61</div>
+                        <div class="text-5xl font-black bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent leading-none">66</div>
                         <div class="text-xs text-gray-500 uppercase tracking-widest mt-2">commands at your fingertips</div>
                     </div>
                     <div class="text-center">
@@ -408,7 +408,7 @@ oh-my-posh init pwsh --config <span class="highlight-green">'C:\theme.omp.json'<
                 <h2 class="text-3xl font-bold text-center mb-2">
                     <span class="text-gray-400">Every command,</span> one screen
                 </h2>
-                <p class="text-center text-gray-500 mb-10">All 58, grouped by area — the same list <span class="mono text-gray-400">toolkit</span> prints in your shell</p>
+                <p class="text-center text-gray-500 mb-10">All 66, grouped by area — the same list <span class="mono text-gray-400">toolkit</span> prints in your shell</p>
 
                 <div class="glass rounded-2xl p-6 md:p-8 columns-1 md:columns-2 lg:columns-3 gap-8">
 
@@ -421,6 +421,7 @@ oh-my-posh init pwsh --config <span class="highlight-green">'C:\theme.omp.json'<
                             <li><span class="mono text-gray-200">touch</span> <span class="text-gray-500">— create / bump timestamp</span></li>
                             <li><span class="mono text-gray-200">which</span> <span class="text-gray-500">— what backs a command</span></li>
                             <li><span class="mono text-gray-200">winup</span> <span class="text-gray-500">— winget upgrade picker</span></li>
+                            <li><span class="mono text-gray-200">cb</span> <span class="text-gray-500">— curated clipboard snippets</span></li>
                         </ul>
                     </div>
 
@@ -435,6 +436,7 @@ oh-my-posh init pwsh --config <span class="highlight-green">'C:\theme.omp.json'<
                             <li><span class="mono text-gray-200">..</span> / <span class="mono text-gray-200">...</span> <span class="text-gray-500">— up one / two dirs</span></li>
                             <li><span class="mono text-gray-200">docs</span> · <span class="mono text-gray-200">desktop</span> · <span class="mono text-gray-200">downloads</span> <span class="text-gray-500">— OneDrive shortcuts</span></li>
                             <li><span class="mono text-gray-200">onedrive</span> · <span class="mono text-gray-200">home</span> <span class="text-gray-500">— root / user profile</span></li>
+                            <li><span class="mono text-gray-200">recent</span> <span class="text-gray-500">— newest files, all sources</span></li>
                         </ul>
                     </div>
 
@@ -514,12 +516,24 @@ oh-my-posh init pwsh --config <span class="highlight-green">'C:\theme.omp.json'<
                     </div>
 
                     <div class="cmd-group mb-6 break-inside-avoid">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-2">Installed apps</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><span class="mono text-gray-200">apps</span> <span class="text-gray-500">— what Programs and Features shows</span></li>
+                            <li><span class="mono text-gray-200">uninst</span> <span class="text-gray-500">— uninstall, with a picker</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="cmd-group mb-6 break-inside-avoid">
                         <h3 class="text-xs font-bold uppercase tracking-wider text-sky-400 mb-2">Microsoft 365</h3>
                         <ul class="space-y-1 text-sm">
                             <li><span class="mono text-gray-200">Connect-Tenant</span> · <span class="mono text-gray-200">Disconnect-Tenant</span> <span class="text-gray-500">— Graph session</span></li>
                             <li><span class="mono text-gray-200">Connect-Exchange</span> · <span class="mono text-gray-200">Disconnect-Exchange</span> <span class="text-gray-500">— EXO session</span></li>
                             <li><span class="mono text-gray-200">Get-TeamsInfo</span> <span class="text-gray-500">— list Teams via Graph</span></li>
                             <li><span class="mono text-gray-200">Get-TenantOverview</span> <span class="text-gray-500">— tenant stats in one shot</span></li>
+                            <li><span class="mono text-gray-200">Get-IntuneOverview</span> <span class="text-gray-500">— device estate, or a dashboard</span></li>
+                            <li><span class="mono text-gray-200">Get-IntuneWin32App</span> <span class="text-gray-500">— Win32 app inventory</span></li>
+                            <li><span class="mono text-gray-200">Get-IntuneWin32AppDetail</span> <span class="text-gray-500">— full delivery picture</span></li>
+                            <li><span class="mono text-gray-200">Get-IntuneWin32AppContentInfo</span> <span class="text-gray-500">— content files &amp; real sizes</span></li>
                         </ul>
                     </div>
 
@@ -557,7 +571,7 @@ oh-my-posh init pwsh --config <span class="highlight-green">'C:\theme.omp.json'<
                 </div>
 
                 <div class="mt-8 text-gray-500 text-sm">
-                    Created by <span class="text-gray-300">Haakon Wibe</span> • MIT licensed • <span class="mono">v0.6.0</span>
+                    Created by <span class="text-gray-300">Haakon Wibe</span> • MIT licensed • <span class="mono">v0.6.1</span>
                 </div>
             </div>
 

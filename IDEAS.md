@@ -217,13 +217,17 @@ a cost spike, secrets/certs nearing expiry. Push exceptions, don't pull status.
 assistant. Builds on the existing `task`/scheduled-task surface (or a cloud
 routine). Needs a stored "yesterday" snapshot to diff against.
 
-## 7. Intune Win32 content-info module — package the research — 🌱 Seeded in-toolkit 2026-07-21
+## 7. Intune Win32 content-info module — package the research — 🌱 Seeded in-toolkit 2026-08-15
 
-> Status note: the first two commands (`Get-IntuneWin32App`,
-> `Get-IntuneWin32AppContentInfo` — committed content versions, real vs.
-> encrypted file sizes, stale uploads) live in `Profiles/M365/IntuneWin32Apps.ps1`
-> as ordinary toolkit cmdlets. The standalone-module framing below stays open
-> for the deeper probe research, if/when it's worth publishing separately.
+> Status note: three commands now live in `Profiles/M365/IntuneWin32Apps.ps1` as
+> ordinary toolkit cmdlets — `Get-IntuneWin32App` (inventory),
+> `Get-IntuneWin32AppDetail` (install mechanics, MSI internals, applicability
+> gates, detection/requirement rules, outcome counts, dependency and
+> supersedence edges, assignments with group names resolved), and
+> `Get-IntuneWin32AppContentInfo` (committed content versions, real vs.
+> encrypted file sizes, stale uploads). The standalone-module framing below
+> stays open for the deeper probe research, if/when it's worth publishing
+> separately.
 
 **What:** A focused module exposing Intune Win32 app content/delivery info that
 the portal doesn't surface (the `SideCar` / `CompanyPortalCatalog` /
