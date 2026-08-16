@@ -348,9 +348,12 @@ function Set-OhMyPoshEnvironment {
     } else {
         if ($PSCmdlet.ShouldProcess('Meslo Nerd Font', 'oh-my-posh font install')) {
             Write-Host '  → Installing Meslo Nerd Font (per-user, no admin needed)...' -ForegroundColor DarkGray
-            # --headless skips the TUI font-family picker; per-user install is
-            # the default for non-admin sessions (Windows 10 1809+).
-            & oh-my-posh font install Meslo --headless
+            # A font-name argument installs directly — the TUI picker only
+            # appears when none is given — and the scope follows the session:
+            # per-user unless elevated. Don't reintroduce `--headless`/`--user`
+            # here: both were removed upstream, and oh-my-posh rejects an
+            # unknown flag with exit 70, which reads as a failed font install.
+            & oh-my-posh font install Meslo
             if ($LASTEXITCODE -eq 0) {
                 Write-Host '  ✓ Meslo Nerd Font installed' -ForegroundColor Green
             } else {
