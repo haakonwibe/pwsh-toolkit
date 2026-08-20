@@ -70,7 +70,10 @@ function Get-OrCreateSecret {
                 Write-Warning "Another vault is already default ('$($existingDefault.Name)'). Registering SecretStore without -DefaultVault."
             }
             Write-Host "Setting up SecretStore vault..." -ForegroundColor Yellow
-            Register-SecretVault @registerArgs
+            # -ErrorAction Stop: Register-SecretVault reports failure
+            # non-terminatingly, so without it a failed registration fell
+            # through to the fetch below against a vault that does not exist.
+            Register-SecretVault @registerArgs -ErrorAction Stop
 
             # Configure passwordless mode as the default. DPAPI already binds
             # the vault file to your Windows user account, so the optional
@@ -131,21 +134,51 @@ function Get-OrCreateSecret {
     if ($AsPlainText) { $getArgs.AsPlainText = $true }
 
     $secret = $null
+    $fetched = $false
     foreach ($attempt in 1, 2) {
         try {
             $secret = Get-Secret @getArgs
+            $fetched = $true
             break
         }
         catch {
-            # Secret genuinely doesn't exist — fall through to the create path.
-            if ($_.Exception.Message -like "*not found*" -or $_.CategoryInfo.Category -eq "ObjectNotFound") {
-                break
-            }
+            # Classify on the module's error identity, never on message text.
+            # Measured against Microsoft.PowerShell.SecretManagement 1.1.2:
+            #
+            #   missing secret  GetSecretNotFound,<cmdlet>       ItemNotFoundException
+            #   missing vault   GetSecretVaultNotFound,<cmdlet>  PSInvalidOperationException
+            #   locked store    (no id of its own)               PasswordRequiredException
+            #
+            # The first two BOTH report category ObjectNotFound, and the vault
+            # error reads "Vault not found in registry: SecretStore" — so a
+            # "*not found*"/ObjectNotFound test cannot tell them apart. It sent
+            # a broken vault down the create-and-store path below, where the
+            # value the user then typed was lost on the equally broken
+            # Set-Secret.
+            #
+            # Match the error id by PREFIX. It arrives in two shapes: the
+            # compiled cmdlet emits "<id>,<command>"
+            # (GetSecretNotFound,Microsoft.PowerShell.SecretManagement.GetSecretCommand)
+            # while other producers — a wrapper, or the mocked command in
+            # tests/Unit.Tests.ps1 — emit the bare "<id>". An -eq matches
+            # neither reliably and a ",*" match drops the bare form, and a miss
+            # here is silent: a missing secret would become a hard error instead
+            # of the create path, this function's whole purpose. The two ids do
+            # not collide, since GetSecretVaultNotFound does not start with
+            # GetSecretNotFound.
+            $errId = [string] $_.FullyQualifiedErrorId
 
             # Locked store: unlock and retry the fetch once. A lock error on the
             # retry is fatal rather than another prompt — if the store is still
             # locked after a successful-looking unlock, asking again just loops.
-            $isLocked = $_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*"
+            # Type name compared as a string rather than -is [Type]: the type
+            # literal has to resolve the SecretManagement assembly at runtime
+            # and throws when it is not loaded. The message match stays as a
+            # fallback for paths where an extension wraps the error in its own
+            # exception type.
+            $isLocked = $_.Exception.GetType().FullName -eq 'Microsoft.PowerShell.SecretManagement.PasswordRequiredException' -or
+                        $_.Exception.Message -like "*password*" -or
+                        $_.Exception.Message -like "*unlock*"
             if ($isLocked -and $attempt -eq 1) {
                 if (-not (Test-SecretStoreInteractive)) { return $null }
                 Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
@@ -160,12 +193,30 @@ function Get-OrCreateSecret {
                 continue
             }
 
-            Write-Error "Error accessing secret '$Name': $_"
+            # Secret genuinely absent — fall through to the create path.
+            if ($errId -like 'GetSecretNotFound*' -or
+                $_.Exception -is [System.Management.Automation.ItemNotFoundException]) {
+                break
+            }
+
+            # Everything else is fatal, including a still-locked store on the
+            # retry. Prompting for a value we have no working vault to store in
+            # would only lose it.
+            if ($errId -like 'GetSecretVaultNotFound*') {
+                Write-Error "Vault 'SecretStore' is not available ($($_.Exception.Message)). Re-register it with: Register-SecretVault -Name SecretStore -ModuleName Microsoft.PowerShell.SecretStore"
+            }
+            else {
+                Write-Error "Error accessing secret '$Name': $_"
+            }
             return $null
         }
     }
 
-    if ($secret) {
+    # Gate on the fetch having SUCCEEDED, not on the value being truthy: an
+    # empty string (or a stored 0 / $false) is a real secret that "if ($secret)"
+    # reads as absent, which would drop through to the prompt below and
+    # overwrite what is already in the vault.
+    if ($fetched) {
         return $secret
     }
 
@@ -226,30 +277,47 @@ function Get-StoredSecrets {
     # unqualified on purpose: it reports VaultName per row, so a second
     # registered vault belongs in the output.
     foreach ($attempt in 1, 2) {
-        try {
-            # Materialize before formatting so a failure can't emit half a table.
-            $info = Get-SecretInfo -ErrorAction Stop
-            $info | Select-Object Name, Type, VaultName | Format-Table -AutoSize
-            break
-        }
-        catch {
-            $isLocked = $_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*"
-            if ($isLocked -and $attempt -eq 1) {
-                if (-not (Test-SecretStoreInteractive)) { return }
-                Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
-                try {
-                    Unlock-SecretStore
-                }
-                catch {
-                    Write-Warning "Failed to unlock SecretStore or no secrets found"
-                    return
-                }
-                continue
-            }
+        # -ErrorAction SilentlyContinue with -ErrorVariable rather than -Stop:
+        # this listing is unqualified on purpose (it reports VaultName per row,
+        # so a second registered vault belongs in the output), and Stop let one
+        # locked or broken vault abort the whole table instead of showing the
+        # vaults that did answer. Collecting the errors keeps the rows AND the
+        # diagnosis, and separates "nothing stored" from "nothing worked" — a
+        # distinction a bare empty result cannot make.
+        $listErrors = @()
+        $info = Get-SecretInfo -ErrorAction SilentlyContinue -ErrorVariable listErrors
 
-            Write-Warning "No secrets found or SecretStore not initialized"
-            return
+        if ($info) {
+            $info | Select-Object Name, Type, VaultName | Format-Table -AutoSize
         }
+
+        $isLocked = @($listErrors | Where-Object {
+            $_.Exception.GetType().FullName -eq 'Microsoft.PowerShell.SecretManagement.PasswordRequiredException' -or
+            $_.Exception.Message -like "*password*" -or
+            $_.Exception.Message -like "*unlock*"
+        }).Count -gt 0
+
+        if ($isLocked -and $attempt -eq 1) {
+            if (-not (Test-SecretStoreInteractive)) { return }
+            Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
+            try {
+                Unlock-SecretStore
+            }
+            catch {
+                Write-Error "Failed to unlock SecretStore: $_"
+                return
+            }
+            continue
+        }
+
+        # Name the vaults that failed without hiding the ones that answered.
+        foreach ($listError in $listErrors) {
+            Write-Warning "Vault listing error: $($listError.Exception.Message)"
+        }
+        if (-not $info -and -not $listErrors) {
+            Write-Warning "No secrets stored yet, or SecretStore is not initialized."
+        }
+        break
     }
 }
 
@@ -282,10 +350,13 @@ function Remove-StoredSecret {
             # -ErrorAction Stop: Remove-Secret's "secret not found" error is
             # non-terminating — without Stop the catch never fires and the
             # success message prints right after the error.
-            # -Vault: unqualified, Remove-Secret deletes from the DEFAULT
-            # vault, which is not SecretStore when another vault already held
-            # that slot — it would delete from a vault this function never
-            # unlocked and leave the one Get-OrCreateSecret writes to intact.
+            # -Vault: MANDATORY on Remove-Secret, unlike Get-Secret and
+            # Set-Secret where it is optional. Unqualified, this call did not
+            # quietly delete from the default vault — it stopped on
+            # PowerShell's mandatory-parameter prompt ("Supply values for the
+            # following parameters: Vault:"), or threw a binding exception in a
+            # non-interactive host. Naming it also keeps the delete pointed at
+            # the same vault the read and the write use.
             Remove-Secret -Name $Name -Vault "SecretStore" -ErrorAction Stop
             Write-Host "✅ Secret '$Name' removed!" -ForegroundColor Green
             break
