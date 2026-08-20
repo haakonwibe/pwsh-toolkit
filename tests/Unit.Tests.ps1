@@ -45,6 +45,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Catalog.ps1')         # Get-ToolkitCommand
     . (Join-Path $commonDir 'Json.ps1')            # Show-Json + Format-JsonColor
     . (Join-Path $commonDir 'ScheduledTasks.ps1')  # Format-TaskResult, Test-ToolkitTaskVisible
+    . (Join-Path $commonDir 'SecretManagement.ps1')  # Get-OrCreateSecret, Get-StoredSecrets, Remove-StoredSecret (vault cmdlets mocked below)
     . (Join-Path $commonDir 'InstalledApps.ps1')   # Test-ArpEntryVisible, Split-UninstallCommand, Resolve-UninstallCommand
     . (Join-Path $repoRoot 'Profiles/M365/IntuneManagement.ps1')  # Get-ComplianceBucket, ConvertTo-IntuneDashboardHtml (defining these needs no Graph)
     . (Join-Path $repoRoot 'Profiles/M365/IntuneWin32Apps.ps1')   # Get-IntuneWin32App, Get-IntuneWin32AppContentInfo (mocked below)
@@ -1693,5 +1694,208 @@ Describe 'Get-InstalledApp (against the live registry)' {
     }
     It '-SilentOnly returns only unattended-capable apps' {
         foreach ($a in Get-InstalledApp -SilentOnly) { $a.Silent | Should -BeTrue }
+    }
+}
+
+Describe 'Get-OrCreateSecret (mocked vault)' {
+
+    BeforeAll {
+        # Stub the vault cmdlets so Pester has something to Mock — the real ones
+        # live in Microsoft.PowerShell.SecretManagement, which this suite must
+        # not require. [CmdletBinding()] is load-bearing: the code calls these
+        # with -ErrorAction / -ErrorVariable, and common parameters only bind on
+        # an advanced function. The param blocks must cover every argument the
+        # code passes, since Pester builds each mock's binding from them.
+        function Get-Secret          { [CmdletBinding()] param($Name, $Vault, [switch]$AsPlainText) throw "stub not mocked: Get-Secret $Name from $Vault (plain=$AsPlainText)" }
+        function Set-Secret          { [CmdletBinding()] param($Name, $Secret, $Vault) throw "stub not mocked: Set-Secret $Name in $Vault ($Secret)" }
+        function Get-SecretInfo      { [CmdletBinding()] param($Name, $Vault) throw "stub not mocked: Get-SecretInfo $Name in $Vault" }
+        function Remove-Secret       { [CmdletBinding()] param($Name, $Vault) throw "stub not mocked: Remove-Secret $Name from $Vault" }
+        function Get-SecretVault     { [CmdletBinding()] param($Name) throw "stub not mocked: Get-SecretVault $Name" }
+        function Register-SecretVault { [CmdletBinding()] param($Name, $ModuleName, [switch]$DefaultVault) throw "stub not mocked: Register-SecretVault $Name ($ModuleName, default=$DefaultVault)" }
+        function Unlock-SecretStore  { [CmdletBinding()] param() }
+
+        # The four failure shapes, as measured against SecretManagement 1.1.2.
+        # A missing SECRET and a missing VAULT both report category
+        # ObjectNotFound and both messages contain "not found", so only the
+        # error id separates them — that collision is the bug these guard.
+        # Raised with Write-Error -ErrorRecord because that reproduces the real
+        # cmdlet's "<id>,<command>" FullyQualifiedErrorId; a bare `throw $rec`
+        # drops the suffix and would not exercise the same match.
+        function New-VaultError ($Kind) {
+            switch ($Kind) {
+                'MissingSecret' { [System.Management.Automation.ErrorRecord]::new(
+                        [System.Management.Automation.ItemNotFoundException]::new('The secret K was not found.'),
+                        'GetSecretNotFound', 'ObjectNotFound', $null) }
+                'MissingVault'  { [System.Management.Automation.ErrorRecord]::new(
+                        [System.Management.Automation.PSInvalidOperationException]::new('Vault not found in registry: SecretStore'),
+                        'GetSecretVaultNotFound', 'ObjectNotFound', $null) }
+                'BrokenVault'   { [System.Management.Automation.ErrorRecord]::new(
+                        [System.Management.Automation.PSInvalidOperationException]::new('Get-Secret function not found.'),
+                        'GetSecretError', 'InvalidOperation', $null) }
+                'Locked'        { [System.Management.Automation.ErrorRecord]::new(
+                        [Exception]::new('A valid password is required to access the vault. Use the Unlock-SecretStore cmdlet.'),
+                        'GetSecretError', 'InvalidOperation', $null) }
+            }
+        }
+    }
+
+    BeforeEach {
+        $script:getCalls = 0
+        Mock Get-SecretVault { [pscustomobject]@{ Name = 'SecretStore'; IsDefault = $true } }
+        Mock Test-SecretStoreInteractive { $true }   # Pester runs with stdin redirected
+        Mock Unlock-SecretStore { }
+        Mock Set-Secret { }
+        Mock Read-Host { ConvertTo-SecureString 'typed-at-prompt' -AsPlainText -Force }
+    }
+
+    It 'fetches vault-qualified, in a single call' {
+        Mock Get-Secret { 'sk-value' }
+        Get-OrCreateSecret -Name 'K' -AsPlainText | Should -Be 'sk-value'
+        Should -Invoke Get-Secret -Times 1 -Exactly -ParameterFilter { $Name -eq 'K' -and $Vault -eq 'SecretStore' }
+        Should -Invoke Read-Host -Times 0
+    }
+
+    It 'unlocks and retries once when the store is locked' {
+        Mock Get-Secret {
+            $script:getCalls++
+            if ($script:getCalls -eq 1) { Write-Error -ErrorRecord (New-VaultError 'Locked') } else { 'sk-value' }
+        }
+        Get-OrCreateSecret -Name 'K' -AsPlainText | Should -Be 'sk-value'
+        Should -Invoke Get-Secret -Times 2 -Exactly
+        Should -Invoke Unlock-SecretStore -Times 1 -Exactly
+    }
+
+    It 'gives up after one unlock rather than looping on the prompt' {
+        Mock Get-Secret { Write-Error -ErrorRecord (New-VaultError 'Locked') }
+        Get-OrCreateSecret -Name 'K' -AsPlainText -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        Should -Invoke Get-Secret -Times 2 -Exactly
+        Should -Invoke Unlock-SecretStore -Times 1 -Exactly
+        Should -Invoke Read-Host -Times 0
+    }
+
+    It 'prompts and stores when the secret is genuinely missing' {
+        Mock Get-Secret { Write-Error -ErrorRecord (New-VaultError 'MissingSecret') }
+        Get-OrCreateSecret -Name 'K' -AsPlainText | Should -Be 'typed-at-prompt'
+        Should -Invoke Read-Host -Times 1 -Exactly
+        Should -Invoke Set-Secret -Times 1 -Exactly -ParameterFilter { $Vault -eq 'SecretStore' }
+    }
+
+    It 'treats a missing vault as fatal and never prompts' {
+        # Both this and the missing-secret case are ObjectNotFound with "not
+        # found" in the message. Prompting here would take the value and lose it
+        # on the equally broken Set-Secret.
+        Mock Get-Secret { Write-Error -ErrorRecord (New-VaultError 'MissingVault') }
+        $err = @()
+        Get-OrCreateSecret -Name 'K' -AsPlainText -ErrorAction SilentlyContinue -ErrorVariable err | Should -BeNullOrEmpty
+        Should -Invoke Read-Host -Times 0
+        Should -Invoke Set-Secret -Times 0
+        @($err | Where-Object { $_ -match 'Register-SecretVault' }).Count | Should -Be 1
+    }
+
+    It 'treats a broken vault extension as fatal despite "not found" in its message' {
+        Mock Get-Secret { Write-Error -ErrorRecord (New-VaultError 'BrokenVault') }
+        Get-OrCreateSecret -Name 'K' -AsPlainText -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        Should -Invoke Read-Host -Times 0
+        Should -Invoke Set-Secret -Times 0
+    }
+
+    It 'returns a stored empty value instead of re-prompting over it' {
+        # An empty string is a real stored value; a truthiness gate reads it as
+        # absent and the create path would overwrite the vault entry.
+        Mock Get-Secret { '' }
+        $r = Get-OrCreateSecret -Name 'K' -AsPlainText
+        $r | Should -Be ''
+        Should -Invoke Read-Host -Times 0
+        Should -Invoke Set-Secret -Times 0
+    }
+}
+
+Describe 'Get-StoredSecrets (mocked vault)' {
+
+    BeforeAll {
+        function Get-SecretInfo     { [CmdletBinding()] param($Name, $Vault) throw "stub not mocked: Get-SecretInfo $Name in $Vault" }
+        function Unlock-SecretStore { [CmdletBinding()] param() }
+        function New-ListError ($Message) {
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.Management.Automation.PSInvalidOperationException]::new($Message),
+                'GetSecretInfoError', 'InvalidOperation', $null)
+        }
+    }
+
+    BeforeEach {
+        $script:listCalls = 0
+        Mock Test-SecretStoreInteractive { $true }
+        Mock Unlock-SecretStore { }
+    }
+
+    It 'lists the vaults that answered and names the one that failed' {
+        # The listing is unqualified (it reports VaultName per row), so one
+        # broken vault must not blank the table for the healthy ones.
+        Mock Get-SecretInfo {
+            [pscustomobject]@{ Name = 'Anthropic-API-Key'; Type = 'SecureString'; VaultName = 'SecretStore' }
+            Write-Error -ErrorRecord (New-ListError 'Vault OtherVault failed to load.')
+        }
+        $out = Get-StoredSecrets -WarningVariable w -WarningAction SilentlyContinue | Out-String
+        $out          | Should -Match 'Anthropic-API-Key'
+        ($w -join ' ') | Should -Match 'OtherVault'
+    }
+
+    It 'unlocks and retries once, then lists' {
+        Mock Get-SecretInfo {
+            $script:listCalls++
+            if ($script:listCalls -eq 1) { Write-Error -ErrorRecord (New-ListError 'A valid password is required. Use the Unlock-SecretStore cmdlet.') }
+            else { [pscustomobject]@{ Name = 'Anthropic-API-Key'; Type = 'SecureString'; VaultName = 'SecretStore' } }
+        }
+        $out = Get-StoredSecrets | Out-String
+        $out | Should -Match 'Anthropic-API-Key'
+        Should -Invoke Get-SecretInfo -Times 2 -Exactly
+        Should -Invoke Unlock-SecretStore -Times 1 -Exactly
+    }
+
+    It 'distinguishes an empty vault from a broken one' {
+        Mock Get-SecretInfo { }
+        Get-StoredSecrets -WarningVariable w -WarningAction SilentlyContinue | Out-Null
+        ($w -join ' ') | Should -Match 'not initialized'
+    }
+
+    It 'surfaces the real reason when the store is still locked after unlocking' {
+        Mock Get-SecretInfo { Write-Error -ErrorRecord (New-ListError 'A valid password is required. Use the Unlock-SecretStore cmdlet.') }
+        Get-StoredSecrets -WarningVariable w -WarningAction SilentlyContinue | Out-Null
+        Should -Invoke Get-SecretInfo -Times 2 -Exactly
+        ($w -join ' ') | Should -Match 'password'
+    }
+}
+
+Describe 'Remove-StoredSecret (mocked vault)' {
+
+    BeforeAll {
+        function Remove-Secret      { [CmdletBinding()] param($Name, $Vault) throw "stub not mocked: Remove-Secret $Name from $Vault" }
+        function Unlock-SecretStore { [CmdletBinding()] param() }
+    }
+
+    BeforeEach {
+        $script:removeCalls = 0
+        Mock Test-SecretStoreInteractive { $true }
+        Mock Unlock-SecretStore { }
+    }
+
+    It 'deletes vault-qualified (-Vault is mandatory on Remove-Secret)' {
+        Mock Remove-Secret { }
+        Remove-StoredSecret -Name 'K'
+        Should -Invoke Remove-Secret -Times 1 -Exactly -ParameterFilter { $Name -eq 'K' -and $Vault -eq 'SecretStore' }
+    }
+
+    It 'unlocks and retries once when the store is locked' {
+        Mock Remove-Secret {
+            $script:removeCalls++
+            if ($script:removeCalls -eq 1) {
+                Write-Error -ErrorRecord ([System.Management.Automation.ErrorRecord]::new(
+                    [Exception]::new('A valid password is required. Use the Unlock-SecretStore cmdlet.'),
+                    'RemoveSecretError', 'InvalidOperation', $null))
+            }
+        }
+        Remove-StoredSecret -Name 'K'
+        Should -Invoke Remove-Secret -Times 2 -Exactly
+        Should -Invoke Unlock-SecretStore -Times 1 -Exactly
     }
 }
