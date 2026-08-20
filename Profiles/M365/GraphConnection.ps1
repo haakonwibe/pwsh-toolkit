@@ -111,8 +111,26 @@ function Connect-Tenant {
             throw "Connect-MgGraph returned no active context."
         }
 
+        # Get-MgContext carries no tenant display name — TenantId is the only
+        # tenant identity on it — so resolve the name ourselves for the banner.
+        # Via Invoke-MgGraphRequest rather than Get-MgOrganization to stay inside
+        # Microsoft.Graph.Authentication (already loaded) instead of importing
+        # Microsoft.Graph.Identity.DirectoryManagement for one string.
+        # Organization.Read.All is in every tier's scope list above, so this
+        # needs no extra consent. Best-effort: the GUID prints alone if the
+        # lookup fails.
+        $tenantLabel = $context.TenantId
+        try {
+            $org = Invoke-MgGraphRequest -Method GET -Uri 'v1.0/organization?$select=displayName' -ErrorAction Stop
+            $tenantName = @($org.value)[0].displayName
+            if ($tenantName) { $tenantLabel = "$tenantName ($($context.TenantId))" }
+        }
+        catch {
+            Write-Verbose "Tenant display name lookup failed: $($_.Exception.Message)"
+        }
+
         Write-Host "✅ Microsoft Graph connected ($Access)" -ForegroundColor Green
-        Write-Host "Tenant: $($context.TenantId)" -ForegroundColor Yellow
+        Write-Host "Tenant: $tenantLabel" -ForegroundColor Yellow
         Write-Host "Account: $($context.Account)" -ForegroundColor Yellow
         if ($Access -eq 'ReadOnly') {
             Write-Host "Read-only session. Use Connect-Tenant -Access Write (or Full) to make changes." -ForegroundColor DarkGray

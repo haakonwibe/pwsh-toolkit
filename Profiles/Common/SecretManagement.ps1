@@ -117,51 +117,56 @@ function Get-OrCreateSecret {
         return $null
     }
 
-    # Check if SecretStore is unlocked, unlock if needed
-    try {
-        # Test access to SecretStore
-        $null = Get-SecretInfo -Vault "SecretStore" -ErrorAction Stop
-    }
-    catch {
-        if ($_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*") {
-            if (-not (Test-SecretStoreInteractive)) { return $null }
-            Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
-            try {
-                Unlock-SecretStore
-                Write-Host "✅ SecretStore unlocked!" -ForegroundColor Green
-            }
-            catch {
-                Write-Error "Failed to unlock SecretStore: $_"
-                return $null
-            }
-        }
-        else {
-            Write-Warning "SecretStore access issue: $_"
-        }
-    }
+    # Fetch the secret. Deliberately WITHOUT a Get-SecretInfo probe first to
+    # test whether the store is unlocked: that enumerates every secret in the
+    # vault to answer a yes/no question, and a locked store fails the fetch
+    # below with the same password/unlock error the probe was looking for — so
+    # the fetch is its own lock check. -Vault matters for the same reason: an
+    # unqualified Get-Secret makes SecretManagement enumerate the registered
+    # vaults to locate the name before fetching it, a second round-trip that
+    # one explicit argument removes. Together those two were three vault hits
+    # per call, plainly visible as repeated "successfully retrieved from vault"
+    # lines under -Verbose (e.g. from wtf).
+    $getArgs = @{ Name = $Name; Vault = "SecretStore"; ErrorAction = 'Stop' }
+    if ($AsPlainText) { $getArgs.AsPlainText = $true }
 
-    # Try to get the secret
-    try {
-        if ($AsPlainText) {
-            $secret = Get-Secret -Name $Name -AsPlainText -ErrorAction Stop
-        } else {
-            $secret = Get-Secret -Name $Name -ErrorAction Stop
+    $secret = $null
+    foreach ($attempt in 1, 2) {
+        try {
+            $secret = Get-Secret @getArgs
+            break
         }
+        catch {
+            # Secret genuinely doesn't exist — fall through to the create path.
+            if ($_.Exception.Message -like "*not found*" -or $_.CategoryInfo.Category -eq "ObjectNotFound") {
+                break
+            }
 
-        if ($secret) {
-            return $secret
-        }
-    }
-    catch {
-        # Check if it's a "secret not found" error vs other errors
-        if ($_.Exception.Message -like "*not found*" -or $_.CategoryInfo.Category -eq "ObjectNotFound") {
-            # Secret genuinely doesn't exist, continue to creation
-        }
-        else {
-            # Some other error (authentication, vault issues, etc.)
+            # Locked store: unlock and retry the fetch once. A lock error on the
+            # retry is fatal rather than another prompt — if the store is still
+            # locked after a successful-looking unlock, asking again just loops.
+            $isLocked = $_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*"
+            if ($isLocked -and $attempt -eq 1) {
+                if (-not (Test-SecretStoreInteractive)) { return $null }
+                Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
+                try {
+                    Unlock-SecretStore
+                    Write-Host "✅ SecretStore unlocked!" -ForegroundColor Green
+                }
+                catch {
+                    Write-Error "Failed to unlock SecretStore: $_"
+                    return $null
+                }
+                continue
+            }
+
             Write-Error "Error accessing secret '$Name': $_"
             return $null
         }
+    }
+
+    if ($secret) {
+        return $secret
     }
 
     # Secret doesn't exist, prompt for it. The context line below answers the
@@ -173,7 +178,12 @@ function Get-OrCreateSecret {
     $secretValue = Read-Host -AsSecureString -Prompt "Enter secret value"
 
     try {
-        Set-Secret -Name $Name -Secret $secretValue -ErrorAction Stop
+        # -Vault to match the qualified read above. Unqualified, Set-Secret
+        # writes to the DEFAULT vault — which is not SecretStore when another
+        # vault already held that slot (see the registration warning above) —
+        # and the next run's SecretStore-scoped read would never find it,
+        # re-prompting forever.
+        Set-Secret -Name $Name -Secret $secretValue -Vault "SecretStore" -ErrorAction Stop
         Write-Host "✅ Secret '$Name' stored securely!" -ForegroundColor Green
 
         # Return in the requested format. Convert in-process for the plaintext
@@ -209,25 +219,36 @@ function Get-StoredSecrets {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseCmdletCorrectly', '', Justification = 'Unlock-SecretStore has no mandatory parameters; the analyzer heuristic is a false positive.')]
     [CmdletBinding()]
     param()
-    try {
-        # Ensure SecretStore is unlocked
-        $null = Get-SecretInfo -Vault "SecretStore" -ErrorAction Stop
-        Get-SecretInfo | Select-Object Name, Type, VaultName | Format-Table -AutoSize
-    }
-    catch {
-        if ($_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*") {
-            if (-not (Test-SecretStoreInteractive)) { return }
-            Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
-            try {
-                Unlock-SecretStore
-                Get-SecretInfo | Select-Object Name, Type, VaultName | Format-Table -AutoSize
-            }
-            catch {
-                Write-Warning "Failed to unlock SecretStore or no secrets found"
-            }
+    # No Get-SecretInfo probe before the listing: the listing is the probe. A
+    # locked store fails it with the same password/unlock error the probe was
+    # looking for, and the probe was a second full enumeration of the vault —
+    # the same redundancy Get-OrCreateSecret had. The listing itself stays
+    # unqualified on purpose: it reports VaultName per row, so a second
+    # registered vault belongs in the output.
+    foreach ($attempt in 1, 2) {
+        try {
+            # Materialize before formatting so a failure can't emit half a table.
+            $info = Get-SecretInfo -ErrorAction Stop
+            $info | Select-Object Name, Type, VaultName | Format-Table -AutoSize
+            break
         }
-        else {
+        catch {
+            $isLocked = $_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*"
+            if ($isLocked -and $attempt -eq 1) {
+                if (-not (Test-SecretStoreInteractive)) { return }
+                Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
+                try {
+                    Unlock-SecretStore
+                }
+                catch {
+                    Write-Warning "Failed to unlock SecretStore or no secrets found"
+                    return
+                }
+                continue
+            }
+
             Write-Warning "No secrets found or SecretStore not initialized"
+            return
         }
     }
 }
@@ -251,30 +272,41 @@ function Remove-StoredSecret {
         [string]$Name
     )
 
-    try {
-        # Ensure SecretStore is unlocked
-        $null = Get-SecretInfo -Vault "SecretStore" -ErrorAction Stop
-        # -ErrorAction Stop: Remove-Secret's "secret not found" error is
-        # non-terminating — without Stop the catch never fires and the success
-        # message prints right after the error.
-        Remove-Secret -Name $Name -ErrorAction Stop
-        Write-Host "✅ Secret '$Name' removed!" -ForegroundColor Green
-    }
-    catch {
-        if ($_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*") {
-            if (-not (Test-SecretStoreInteractive)) { return }
-            Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
-            try {
-                Unlock-SecretStore
-                Remove-Secret -Name $Name -ErrorAction Stop
-                Write-Host "✅ Secret '$Name' removed!" -ForegroundColor Green
-            }
-            catch {
-                Write-Error "Failed to remove secret: $_"
-            }
+    # Same shape as Get-OrCreateSecret: the removal is its own lock check, so
+    # no Get-SecretInfo probe first. The probe read like a safety check before
+    # a destructive call, but bought nothing — the removal is one atomic call
+    # that already fails cleanly on a locked store — and it checked a vault the
+    # removal didn't necessarily target (see -Vault below).
+    foreach ($attempt in 1, 2) {
+        try {
+            # -ErrorAction Stop: Remove-Secret's "secret not found" error is
+            # non-terminating — without Stop the catch never fires and the
+            # success message prints right after the error.
+            # -Vault: unqualified, Remove-Secret deletes from the DEFAULT
+            # vault, which is not SecretStore when another vault already held
+            # that slot — it would delete from a vault this function never
+            # unlocked and leave the one Get-OrCreateSecret writes to intact.
+            Remove-Secret -Name $Name -Vault "SecretStore" -ErrorAction Stop
+            Write-Host "✅ Secret '$Name' removed!" -ForegroundColor Green
+            break
         }
-        else {
+        catch {
+            $isLocked = $_.Exception.Message -like "*password*" -or $_.Exception.Message -like "*unlock*"
+            if ($isLocked -and $attempt -eq 1) {
+                if (-not (Test-SecretStoreInteractive)) { return }
+                Write-Host "🔐 SecretStore is locked. Please unlock it first:" -ForegroundColor Yellow
+                try {
+                    Unlock-SecretStore
+                }
+                catch {
+                    Write-Error "Failed to unlock SecretStore: $_"
+                    return
+                }
+                continue
+            }
+
             Write-Error "Failed to remove secret: $_"
+            return
         }
     }
 }
