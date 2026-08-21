@@ -47,10 +47,20 @@
 
   .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:var(--gap); margin-bottom:var(--gap)}
   .tile{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px 17px}
-  .tile.hero{border-color:rgba(61,214,140,.35); background:linear-gradient(180deg,rgba(61,214,140,.06),var(--surface) 60%)}
+  /* The hero tile's tint comes from the compliance bucket in the payload. A
+     percentage needs a threshold to mean anything, and the tint, the number
+     and the dot have to move together or the tile reads calm while the number
+     reads bad. No bucket at all (an empty tenant, an older snapshot) falls
+     through to the plain tile treatment — the honest "no signal" state, and
+     the reason none of this is set on bare .tile.hero: green used to be
+     hardcoded here, so a 20%-compliant tenant looked exactly as calm as a
+     100% one. */
+  .tile.hero.good{border-color:rgba(61,214,140,.35); background:linear-gradient(180deg,rgba(61,214,140,.06),var(--surface) 60%)}
+  .tile.hero.warn{border-color:rgba(232,185,62,.35); background:linear-gradient(180deg,rgba(232,185,62,.06),var(--surface) 60%)}
+  .tile.hero.crit{border-color:rgba(240,104,74,.35); background:linear-gradient(180deg,rgba(240,104,74,.06),var(--surface) 60%)}
   .tile .val{font-family:var(--mono); font-size:30px; font-weight:600; letter-spacing:-.02em; margin-top:9px; line-height:1}
   .tile .val small{font-size:15px; color:var(--ink-2); font-weight:500}
-  .tile.hero .val{color:var(--good)}
+  .tile.hero.good .val{color:var(--good)} .tile.hero.warn .val{color:var(--warn)} .tile.hero.crit .val{color:var(--crit)}
   .tile .sub{margin-top:8px; font-size:12px; color:var(--ink-3); display:flex; align-items:center; gap:6px}
   .tile .sub .dot{width:7px; height:7px; border-radius:50%}
   .val.warnv{color:var(--warn)} .val.critv{color:var(--crit)} .val.goodv{color:var(--good)}
@@ -64,7 +74,8 @@
   .compliance{display:grid; grid-template-columns:150px 1fr; gap:20px; align-items:center}
   .donut-wrap{position:relative; width:150px; height:150px}
   .donut-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center}
-  .donut-center .pct{font-family:var(--mono); font-size:32px; font-weight:600; color:var(--good); line-height:1}
+  .donut-center .pct{font-family:var(--mono); font-size:32px; font-weight:600; color:var(--ink); line-height:1}
+  .donut-center .pct.good{color:var(--good)} .donut-center .pct.warn{color:var(--warn)} .donut-center .pct.crit{color:var(--crit)}
   .donut-center .cap{font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); margin-top:4px}
   .legend{display:flex; flex-direction:column; gap:2px}
   .legend .lrow{display:grid; grid-template-columns:12px 1fr auto auto; gap:10px; align-items:center; padding:7px 6px; border-radius:6px}
@@ -189,6 +200,10 @@
   "use strict";
   var D=JSON.parse(document.getElementById("cockpit-data").textContent);
   var staleDays=D.meta.staleDays||30;
+  // Threshold bucket for the headline percentage, and how many of the
+  // non-compliant devices are the same machines as the stale ones.
+  var cbucket=D.kpis.complianceBucket||"unknown";
+  var overlap=D.kpis.overlap||0;
   // Palette read from the :root custom properties, so CSS stays the single
   // source of truth for every color the JS paints (SVG strokes, dots, swatches).
   var css=getComputedStyle(document.documentElement);
@@ -216,12 +231,13 @@
     var pct=D.kpis.compliancePct;
     var tiles=[
       {lbl:"Managed devices",val:String(D.kpis.total),cls:"",dot:COL.accent,sub:"enrolled endpoints"},
-      {lbl:"Compliance",val:pct+"<small>%</small>",cls:"hero",dot:COL.good,sub:D.kpis.compliant+" of "+D.kpis.total+" compliant"},
-      {lbl:"Non-compliant",val:String(D.kpis.nonCompliant),cls:D.kpis.nonCompliant>0?"critv":"goodv",dot:D.kpis.nonCompliant>0?COL.crit:COL.good,sub:"need remediation"},
+      {lbl:"Compliance",val:pct+"<small>%</small>",cls:"hero",dot:bucketColor(cbucket),sub:D.kpis.compliant+" of "+D.kpis.total+" compliant"},
+      {lbl:"Non-compliant",val:String(D.kpis.nonCompliant),cls:D.kpis.nonCompliant>0?"critv":"goodv",dot:D.kpis.nonCompliant>0?COL.crit:COL.good,
+       sub:overlap>0?(overlap+" of them also stale"):"need remediation"},
       {lbl:"Stale · "+staleDays+"d+",val:String(D.kpis.stale),cls:D.kpis.stale>0?"warnv":"goodv",dot:D.kpis.stale>0?COL.warn:COL.good,sub:"no check-in "+staleDays+"+ days"}
     ];
     tiles.forEach(function(t){
-      var el=document.createElement("div"); el.className="tile"+(t.cls==="hero"?" hero":"");
+      var el=document.createElement("div"); el.className="tile"+(t.cls==="hero"?" hero "+cbucket:"");
       var valcls=(t.cls&&t.cls!=="hero")?(" "+t.cls):"";
       el.innerHTML='<div class="eyebrow">'+t.lbl+'</div><div class="val'+valcls+'">'+t.val+'</div>'+
         '<div class="sub"><span class="dot" style="background:'+t.dot+'"></span>'+t.sub+'</div>';
@@ -231,7 +247,9 @@
 
   // compliance donut + legend
   (function(){
-    document.getElementById("comp-pct").textContent=D.kpis.compliancePct+"%";
+    var pctEl=document.getElementById("comp-pct");
+    pctEl.textContent=D.kpis.compliancePct+"%";
+    pctEl.className="pct "+cbucket;   // same threshold as the hero tile
     document.getElementById("comp-total").textContent=D.kpis.total+" devices";
     var segs=D.compliance, total=segs.reduce(function(a,b){return a+b.value;},0)||1;
     var svg=document.getElementById("donut"),NS="http://www.w3.org/2000/svg";

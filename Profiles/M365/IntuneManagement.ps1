@@ -30,7 +30,7 @@ function Get-MgGraphAllPage {
 function Get-IntuneOverviewData {
     try {
         $devices = Get-MgGraphAllPage -Uri ("v1.0/deviceManagement/managedDevices?" +
-            '$select=deviceName,operatingSystem,complianceState,lastSyncDateTime,managementAgent&$top=999')
+            '$select=id,deviceName,operatingSystem,complianceState,lastSyncDateTime,managementAgent&$top=999')
     }
     catch {
         # Typical causes: scopes consented before the Intune tiers (reconnect),
@@ -51,6 +51,11 @@ function Get-IntuneOverviewData {
     try { $apps = @(Get-MgGraphAllPage -Uri 'v1.0/deviceAppManagement/mobileApps?$select=id&$top=999').Count }
     catch { Write-Debug "app count unavailable: $($_.Exception.Message)" }
 
+    # Why the failing devices are failing. Best-effort like the counts above:
+    # an empty map just means every non-compliant row falls back to its bare
+    # state, which is what the cockpit showed before this existed.
+    $reasons = Get-DeviceComplianceReason -Devices $devices
+
     # Friendly tenant label: the signed-in account's domain beats a raw GUID.
     $ctx = Get-MgContext
     $tenant = if ($ctx.Account -and $ctx.Account -match '@(.+)$') { $Matches[1] } else { $ctx.TenantId }
@@ -58,6 +63,7 @@ function Get-IntuneOverviewData {
     [pscustomobject]@{
         Error              = $null
         Devices            = @($devices)
+        ComplianceReasons  = $reasons
         Configs            = $configs
         CompliancePolicies = $compliance
         Catalog            = $catalog
@@ -81,6 +87,28 @@ function Get-ComplianceBucket {
     }
 }
 
+# The compliance-headline policy, in one place. The cockpit's biggest number
+# is a percentage, and a percentage needs a threshold to mean anything: at or
+# above IntuneComplianceGoodPct the fleet is healthy, at or above
+# IntuneComplianceWarnPct it is slipping, below that it needs attention. Both
+# the hero tile and the donut center read the bucket these produce.
+$script:IntuneComplianceGoodPct = 90
+$script:IntuneComplianceWarnPct = 75
+
+# Reason lookups cost one Graph call per failing device, so they stop here. A
+# tenant with hundreds of non-compliant devices would otherwise turn a
+# one-shot overview into hundreds of round-trips; past the cap the rows fall
+# back to the bare state.
+$script:IntuneReasonLookupMax = 25
+
+function Get-CompliancePctBucket {
+    [OutputType([string])]
+    param([Parameter(Mandatory)][int] $Percent)
+    if     ($Percent -ge $script:IntuneComplianceGoodPct) { 'good' }
+    elseif ($Percent -ge $script:IntuneComplianceWarnPct) { 'warn' }
+    else                                                  { 'crit' }
+}
+
 # The staleness policy, in one place: a device that hasn't checked in for
 # IntuneStaleDays is stale; IntuneStaleCritDays (or never having synced) reads
 # as critical. The console, the dashboard payload, and the cockpit's labels
@@ -96,6 +124,49 @@ function Get-DeviceSyncAge {
     param($Device, [Parameter(Mandatory)][datetime] $AsOf)
     if (-not $Device.lastSyncDateTime) { return $null }
     [int][math]::Floor(($AsOf - [datetime]$Device.lastSyncDateTime).TotalDays)
+}
+
+# One identity for a device across the two attention lists and the reason map.
+# Id when there is one; the name is the fallback for snapshots that predate the
+# id being selected (and for test data that carries only a name).
+function Get-DeviceKey {
+    [OutputType([string])]
+    param($Device)
+    if ($Device.id) { "$($Device.id)" } else { "$($Device.deviceName)" }
+}
+
+# Why the crit-bucket devices are failing, as a map of device key -> failing
+# policy names. The managedDevices $select carries the state but no reason, so
+# without this the cockpit's non-compliant rows could only repeat the word
+# "noncompliant" back at you. The names come from a per-device call, so this
+# runs only for devices that already need remediation — the cost scales with
+# the problem list, not the fleet — and stops at IntuneReasonLookupMax.
+# Best-effort per device: a lookup that fails leaves that device unexplained
+# rather than failing the overview.
+function Get-DeviceComplianceReason {
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][AllowEmptyCollection()][AllowNull()] $Devices)
+
+    $reasons = @{}
+    $failing = @($Devices | Where-Object { $_ -and $_.id -and (Get-ComplianceBucket $_.complianceState) -eq 'crit' })
+    foreach ($d in ($failing | Select-Object -First $script:IntuneReasonLookupMax)) {
+        try {
+            $states = Get-MgGraphAllPage -Uri ("v1.0/deviceManagement/managedDevices/$($d.id)/deviceCompliancePolicyStates?" +
+                '$select=displayName,state&$top=100')
+            # A policy state reports the same vocabulary as a device does
+            # (nonCompliant/error/conflict), so one classifier covers both —
+            # which is also what drops 'compliant', 'remediated' and
+            # 'notApplicable' rows without naming them as reasons.
+            $named = @($states |
+                Where-Object { (Get-ComplianceBucket $_.state) -eq 'crit' } |
+                ForEach-Object { $_.displayName } |
+                Where-Object { $_ } |
+                Select-Object -Unique)
+            if ($named) { $reasons[(Get-DeviceKey $d)] = $named }
+        }
+        catch { Write-Debug "compliance reason unavailable for $($d.deviceName): $($_.Exception.Message)" }
+    }
+    return $reasons
 }
 
 # Shape a Get-IntuneOverviewData object into the self-contained cockpit HTML by
@@ -117,6 +188,7 @@ function ConvertTo-IntuneDashboardHtml {
     $devices = @($Data.Devices | Where-Object { $null -ne $_ })
     $total   = $devices.Count
     $now     = $Data.Generated
+    $reasons = if ($Data.ComplianceReasons -is [hashtable]) { $Data.ComplianceReasons } else { @{} }
 
     # One classification pass groups every device into the four buckets the
     # donut understands; the crit group doubles as the non-compliant list.
@@ -132,43 +204,71 @@ function ConvertTo-IntuneDashboardHtml {
     if ($count.crit)    { $segments += [pscustomobject]@{ label = 'Non-compliant';    value = $count.crit;    bucket = 'crit' } }
     if ($count.unknown) { $segments += [pscustomobject]@{ label = 'Not evaluated';    value = $count.unknown; bucket = 'unknown' } }
     $pct = if ($total) { [int][math]::Round($count.good / $total * 100, [System.MidpointRounding]::AwayFromZero) } else { 0 }
+    # An empty tenant has no compliance signal to report, and 0% would paint
+    # the headline red for a fleet that simply doesn't exist yet — 'unknown'
+    # renders neutral instead.
+    $pctBucket = if ($total) { Get-CompliancePctBucket $pct } else { 'unknown' }
 
     $os = @($devices | Group-Object operatingSystem | Sort-Object Count -Descending | ForEach-Object {
         [pscustomobject]@{ label = if ($_.Name) { $_.Name } else { 'Unknown' }; value = $_.Count }
     })
+
+    # A device that stopped checking in weeks ago is usually non-compliant
+    # *because* it went stale, so these two panels routinely describe the same
+    # machine. Each row says so, and the overlap is counted for the KPI tile —
+    # otherwise two tiles reading "1" and "1" imply two machines in trouble.
+    $critKeys = @{}
+    foreach ($d in $critDevices) { $critKeys[(Get-DeviceKey $d)] = $true }
 
     # Stale: no check-in for IntuneStaleDays+ (or never); crit past the crit cutoff.
     $staleTmp = foreach ($d in $devices) {
         $age   = Get-DeviceSyncAge -Device $d -AsOf $now
         $never = $null -eq $age
         if ($never -or $age -ge $script:IntuneStaleDays) {
+            $key  = Get-DeviceKey $d
+            $also = if ($critKeys.ContainsKey($key)) { ' · non-compliant' } else { '' }
             [pscustomobject]@{
                 dev   = $d.deviceName
-                why   = "$($d.operatingSystem) · last sync $(if ($never) { 'never' } else { ([datetime]$d.lastSyncDateTime).ToString('yyyy-MM-dd') })"
+                why   = "$($d.operatingSystem) · last sync $(if ($never) { 'never' } else { ([datetime]$d.lastSyncDateTime).ToString('yyyy-MM-dd') })$also"
                 sev   = if ($never -or $age -ge $script:IntuneStaleCritDays) { 'crit' } else { 'warn' }
                 state = if ($never) { 'never' } else { "$age d" }
                 ic    = "$([char]0x25CB)"   # ○
                 _age  = if ($never) { [int]::MaxValue } else { $age }
+                _key  = $key
             }
         }
     }
     $stale = @($staleTmp | Sort-Object _age -Descending | Select-Object dev, why, sev, state, ic)
+    $staleState = @{}
+    foreach ($row in $staleTmp) { $staleState[$row._key] = $row.state }
 
     # Non-compliant list = the crit bucket (needs remediation); grace shows in
-    # the donut only. Basic $select carries no failure reason, so the state is
-    # the "why" — a per-device reason lookup is a future add.
+    # the donut only. The "why" names the policies the device is actually
+    # failing, from the reason map gathered with the snapshot; a device with no
+    # reason available (lookup failed, or past the cap) keeps the bare state,
+    # which is all this row could ever say before.
     $nonCompliant = @($critDevices | ForEach-Object {
+        $key   = Get-DeviceKey $_
+        $named = @(if ($reasons.ContainsKey($key)) { $reasons[$key] })
+        # Two names is what the row has width for; the rest are counted.
+        $why   = if ($named.Count -gt 2) { "$($named[0]), $($named[1]) +$($named.Count - 2) more" }
+                 elseif ($named.Count)   { $named -join ', ' }
+                 else                    { $_.complianceState }
+        $staleNote = if ($staleState.ContainsKey($key)) { " · stale $($staleState[$key])" } else { '' }
         [pscustomobject]@{
-            dev = $_.deviceName; why = "$($_.operatingSystem) · $($_.complianceState)"
+            dev = $_.deviceName; why = "$($_.operatingSystem) · $why$staleNote"
             sev = 'crit'; state = $_.complianceState; ic = "$([char]0x2715)"   # ✕
         }
     })
+    $overlap = @($critDevices | Where-Object { $staleState.ContainsKey((Get-DeviceKey $_)) }).Count
 
     $payload = [pscustomobject]@{
         meta    = [pscustomobject]@{ tenant = $Data.Tenant; generated = $now.ToString('yyyy-MM-dd HH:mm')
                                      staleDays = $script:IntuneStaleDays }
         kpis    = [pscustomobject]@{ total = $total; compliant = $count.good; compliancePct = $pct
-                                     nonCompliant = $count.crit; stale = @($stale).Count }
+                                     complianceBucket = $pctBucket
+                                     nonCompliant = $count.crit; stale = @($stale).Count
+                                     overlap = $overlap }
         compliance   = @($segments)
         os           = @($os)
         stale        = @($stale)
@@ -279,9 +379,14 @@ function Get-IntuneOverview {
         }
         Write-Host "  $($g.Name): $($g.Count)" -ForegroundColor $color
     }
+    # The dashboard names the failing policies, so the console does too — same
+    # snapshot, same reason map, no second fetch.
+    $reasons = if ($data.ComplianceReasons -is [hashtable]) { $data.ComplianceReasons } else { @{} }
     $problem = @($devices | Where-Object { $_.complianceState -ne 'compliant' })
     foreach ($d in $problem) {
-        Write-Host "    - $($d.deviceName)  [$($d.complianceState)]" -ForegroundColor DarkYellow
+        $key = Get-DeviceKey $d
+        $why = if ($reasons.ContainsKey($key)) { "  ($($reasons[$key] -join ', '))" } else { '' }
+        Write-Host "    - $($d.deviceName)  [$($d.complianceState)]$why" -ForegroundColor DarkYellow
     }
 
     Write-Host "`n🖥️  By OS:" -ForegroundColor Yellow

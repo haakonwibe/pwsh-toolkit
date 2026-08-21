@@ -1060,6 +1060,72 @@ Describe 'Get-IntuneOverview dashboard render' {
     It 'carries the stale threshold in the payload for the template labels' {
         $script:payload.meta.staleDays | Should -Be 30
     }
+
+    It 'buckets the headline percentage at the good/warn thresholds' {
+        Get-CompliancePctBucket 100 | Should -Be 'good'
+        Get-CompliancePctBucket 90  | Should -Be 'good'
+        Get-CompliancePctBucket 89  | Should -Be 'warn'
+        Get-CompliancePctBucket 75  | Should -Be 'warn'
+        Get-CompliancePctBucket 74  | Should -Be 'crit'
+        Get-CompliancePctBucket 0   | Should -Be 'crit'
+    }
+
+    It 'carries the headline bucket, so a mediocre percentage cannot render healthy' {
+        # The hero tile and the donut center paint from this. Both used to be
+        # hardcoded green, which made 60% look exactly like 100%.
+        $script:payload.kpis.compliancePct    | Should -Be 60
+        $script:payload.kpis.complianceBucket | Should -Be 'crit'
+    }
+
+    It 'reports no compliance signal for an empty tenant instead of a red 0%' {
+        $empty = [pscustomobject]@{ Devices=@(); Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        $h = ConvertTo-IntuneDashboardHtml -Data $empty
+        $p = [regex]::Match($h,'(?s)<script id="cockpit-data"[^>]*>(.*?)</script>').Groups[1].Value | ConvertFrom-Json
+        $p.kpis.complianceBucket | Should -Be 'unknown'
+    }
+
+    It 'names the failing policies on a non-compliant row' {
+        $d = [pscustomobject]@{
+            Devices = @([pscustomobject]@{ id='d1'; deviceName='PC-1'; operatingSystem='Windows'; complianceState='noncompliant'; lastSyncDateTime=(Get-Date) })
+            ComplianceReasons = @{ 'd1' = @('Baseline - BitLocker') }
+            Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        $h = ConvertTo-IntuneDashboardHtml -Data $d
+        $p = [regex]::Match($h,'(?s)<script id="cockpit-data"[^>]*>(.*?)</script>').Groups[1].Value | ConvertFrom-Json
+        $p.nonCompliant[0].why | Should -Be ('Windows ' + [char]0xB7 + ' Baseline - BitLocker')
+    }
+
+    It 'counts the failing policies past the first two instead of overflowing the row' {
+        $d = [pscustomobject]@{
+            Devices = @([pscustomobject]@{ id='d1'; deviceName='PC-1'; operatingSystem='Windows'; complianceState='noncompliant'; lastSyncDateTime=(Get-Date) })
+            ComplianceReasons = @{ 'd1' = @('A','B','C','D') }
+            Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        $h = ConvertTo-IntuneDashboardHtml -Data $d
+        $p = [regex]::Match($h,'(?s)<script id="cockpit-data"[^>]*>(.*?)</script>').Groups[1].Value | ConvertFrom-Json
+        $p.nonCompliant[0].why | Should -Be ('Windows ' + [char]0xB7 + ' A, B +2 more')
+    }
+
+    It 'falls back to the bare state when no reason is available' {
+        # What every row said before the reason lookup existed — a device past
+        # the lookup cap, or one whose lookup failed, still renders.
+        $script:payload.nonCompliant[0].why | Should -Be ('Windows ' + [char]0xB7 + ' noncompliant')
+    }
+
+    It 'cross-references a device that is both stale and non-compliant' {
+        # Same machine, two panels: each row says so, and the overlap is
+        # counted so two tiles reading 1 and 1 do not imply two machines.
+        $d = [pscustomobject]@{
+            Devices = @([pscustomobject]@{ id='d1'; deviceName='PC-1'; operatingSystem='Windows'; complianceState='noncompliant'; lastSyncDateTime=(Get-Date).AddDays(-55).AddHours(-1) })
+            Configs=$null;CompliancePolicies=$null;Catalog=$null;Apps=$null;Tenant='t';Generated=Get-Date }
+        $h = ConvertTo-IntuneDashboardHtml -Data $d
+        $p = [regex]::Match($h,'(?s)<script id="cockpit-data"[^>]*>(.*?)</script>').Groups[1].Value | ConvertFrom-Json
+        $p.stale[0].why        | Should -BeLike '*non-compliant'
+        $p.nonCompliant[0].why | Should -BeLike '*stale 55 d'
+        $p.kpis.overlap        | Should -Be 1
+    }
+
+    It 'counts no overlap when the stale and non-compliant devices are different machines' {
+        $script:payload.kpis.overlap | Should -Be 0
+    }
 }
 
 Describe 'Get-IntuneOverviewData (mocked Graph)' {
@@ -1124,6 +1190,67 @@ Describe 'Get-IntuneOverviewData (mocked Graph)' {
         Mock Get-MgContext { [pscustomobject]@{ Account = $null; TenantId = 'tid-guid' } }
         Mock Invoke-MgGraphRequest { @{ value = @() } }
         (Get-IntuneOverviewData).Tenant | Should -Be 'tid-guid'
+    }
+
+    It 'selects the device id, which every per-device follow-up is keyed on' {
+        Mock Get-MgContext { [pscustomobject]@{ Account = 'ga@contoso.com'; TenantId = 'tid' } }
+        Mock Invoke-MgGraphRequest { @{ value = @() } }
+        $null = Get-IntuneOverviewData
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Uri -like '*managedDevices?*$select=id,*' }
+    }
+
+    It 'names only the policies a device is actually failing' {
+        Mock Invoke-MgGraphRequest {
+            @{ value = @(
+                @{ displayName = 'Baseline - BitLocker';  state = 'nonCompliant' }
+                @{ displayName = 'Baseline - Defender';   state = 'compliant' }
+                @{ displayName = 'Baseline - Firewall';   state = 'notApplicable' }
+                @{ displayName = 'Baseline - Remediated'; state = 'remediated' }
+                @{ displayName = 'Baseline - Updates';    state = 'error' }
+            ) }
+        }
+        $r = Get-DeviceComplianceReason -Devices @(
+            [pscustomobject]@{ id = 'd1'; deviceName = 'PC-1'; complianceState = 'noncompliant' })
+        $r['d1'] | Should -Be @('Baseline - BitLocker', 'Baseline - Updates')
+    }
+
+    It 'looks up only the devices that need remediation' {
+        # Compliant and grace-period devices cost nothing, and a device with no
+        # id cannot be looked up at all.
+        Mock Invoke-MgGraphRequest { @{ value = @(@{ displayName = 'P'; state = 'nonCompliant' }) } }
+        $r = Get-DeviceComplianceReason -Devices @(
+            [pscustomobject]@{ id = 'd1'; deviceName = 'PC-1'; complianceState = 'compliant' }
+            [pscustomobject]@{ id = 'd2'; deviceName = 'PC-2'; complianceState = 'noncompliant' }
+            [pscustomobject]@{ id = 'd3'; deviceName = 'PC-3'; complianceState = 'inGracePeriod' }
+            [pscustomobject]@{ deviceName = 'PC-4'; complianceState = 'noncompliant' })
+        @($r.Keys) | Should -Be @('d2')
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly
+    }
+
+    It 'stops at the lookup cap rather than one round-trip per failing device' {
+        Mock Invoke-MgGraphRequest { @{ value = @(@{ displayName = 'P'; state = 'nonCompliant' }) } }
+        $many = 1..40 | ForEach-Object {
+            [pscustomobject]@{ id = "d$_"; deviceName = "PC-$_"; complianceState = 'noncompliant' } }
+        (Get-DeviceComplianceReason -Devices $many).Count | Should -Be 25
+        Should -Invoke Invoke-MgGraphRequest -Times 25 -Exactly
+    }
+
+    It 'keeps the reasons that resolved when one device lookup fails' {
+        Mock Invoke-MgGraphRequest {
+            if ($Uri -like '*managedDevices/bad/*') { throw '403 Forbidden' }
+            @{ value = @(@{ displayName = 'Baseline'; state = 'nonCompliant' }) }
+        }
+        $r = Get-DeviceComplianceReason -Devices @(
+            [pscustomobject]@{ id = 'bad'; deviceName = 'PC-BAD'; complianceState = 'noncompliant' }
+            [pscustomobject]@{ id = 'ok';  deviceName = 'PC-OK';  complianceState = 'noncompliant' })
+        $r.ContainsKey('bad') | Should -Be $false
+        $r['ok'] | Should -Be @('Baseline')
+    }
+
+    It 'returns an empty map (not a throw) when nothing is failing' {
+        Mock Invoke-MgGraphRequest { throw 'should not be called' }
+        (Get-DeviceComplianceReason -Devices @()).Count   | Should -Be 0
+        (Get-DeviceComplianceReason -Devices $null).Count | Should -Be 0
     }
 }
 

@@ -38,6 +38,7 @@ $script:ToolkitInternalCommands = @(
     'Invoke-JumpTo'
     'Get-JumpBookmark', 'Save-JumpBookmark', 'Sync-JumpBookmark', 'Add-JumpBookmark', 'Remove-JumpBookmark'
     'Get-MgGraphAllPage', 'Get-IntuneOverviewData', 'Get-ComplianceBucket', 'Get-DeviceSyncAge', 'ConvertTo-IntuneDashboardHtml', 'Show-IntuneDashboard'
+    'Get-CompliancePctBucket', 'Get-DeviceKey', 'Get-DeviceComplianceReason'
     'ConvertTo-Win32RuleSummary', 'Resolve-MobileAppAssignmentTarget'
     'Get-ToolkitDataPath'
     'Get-RecentFile', 'Format-FileAge', 'Get-FileDizDescription'
