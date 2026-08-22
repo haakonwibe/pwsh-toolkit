@@ -101,7 +101,14 @@ Run `uninst` with no argument and capture the picker. The two markers are the po
 
 Not a terminal shot, and not taken against a real tenant — a live one leaks the signed-in username in the `file://` path, the tenant domain in the header, and every device name in the callout lists. `ConvertTo-IntuneDashboardHtml` is pure (data + template → string), so build a synthetic `Get-IntuneOverviewData`-shaped object instead and render through the exact same code path the real command uses. Give it enough shape to be worth showing: several platforms, all four compliance buckets, and a stale tail spanning the 30d/60d cutoffs plus one device that never checked in. Two details are worth setting deliberately, because they only appear when the data earns them: a `ComplianceReasons` map (device id -> failing policy names) is what makes the non-compliant rows say something other than "noncompliant", and one device that is *both* stale and non-compliant is what shows the cross-referencing and the tile's overlap caption. Pin `Generated` to a fixed timestamp too — the stale day counts are derived from it, so an unpinned capture renumbers them every time. Keep each attention list to four entries or fewer, or it hits the `.att-list` 280px scroll cap and the capture shows a half-row.
 
-Render it headlessly, the same way `poster.png` is made:
+Render it headlessly, the same way `poster.png` is made — for the poster itself
+that means `--window-size=1013,715` at the same 2x scale, which lands exactly on
+its committed 2026x1430 with no cropping (the hero region, cut mid-panel by the
+viewport edge). `docs/poster.html` pulls Tailwind and Google Fonts from the
+network, so its render needs internet, and re-rendering shifts roughly 12% of
+its pixels by one or two levels — gradient dithering Chrome doesn't reproduce
+byte-for-byte between runs. Compare a re-render by difference *magnitude*, not
+by pixel count, or you'll chase noise. The cockpit's own numbers:
 
 ```
 chrome --headless=new --hide-scrollbars --user-data-dir=<temp> \

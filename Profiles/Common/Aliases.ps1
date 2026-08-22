@@ -302,7 +302,27 @@ function Invoke-DownloadsTagger {
     .SYNOPSIS
         Tag files in Downloads with FILE_ID.DIZ-style AI descriptions (alias: tagdl).
     #>
-    & $script:DownloadsTagScript @args
+    # The parameters are declared rather than forwarded as @args so that tab
+    # completion has something to offer — @args is opaque to the completion
+    # engine, which is why `tagdl -<Tab>` used to produce nothing while `dird`
+    # (a dot-sourced function with a real param block) completed fine.
+    #
+    # Deliberately no default values here: only the parameters the caller
+    # actually bound are splatted on, so the script stays the single source of
+    # truth for both the defaults and the behaviour. Declaration order matches
+    # the script's, which keeps positional binding identical. Unit tests assert
+    # this block and the script's cannot drift apart.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '', Justification = 'The forwarded script owns the ShouldProcess call; SupportsShouldProcess here exists only so -WhatIf/-Confirm bind on the wrapper and splat through to it.')]
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string]   $Path,
+        [int]      $Limit,
+        [switch]   $Force,
+        [string]   $Model,
+        [string[]] $SkipPattern,
+        [switch]   $RestoreTimestamps
+    )
+    & $script:DownloadsTagScript @PSBoundParameters
 }
 Set-Alias tagdl Invoke-DownloadsTagger
 
@@ -312,7 +332,16 @@ function Invoke-DownloadsSorter {
     .SYNOPSIS
         Sort tagged Downloads into per-bucket subfolders, with preview and undo (alias: sortdl).
     #>
-    & $script:DownloadsSortScript @args
+    # Declared for tab completion, splatted by bound name only — see the notes
+    # on Invoke-DownloadsTagger above.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '', Justification = 'The forwarded script owns the ShouldProcess call; SupportsShouldProcess here exists only so -WhatIf/-Confirm bind on the wrapper and splat through to it.')]
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string] $Path,
+        [switch] $Yes,
+        [switch] $Undo
+    )
+    & $script:DownloadsSortScript @PSBoundParameters
 }
 Set-Alias sortdl Invoke-DownloadsSorter
 

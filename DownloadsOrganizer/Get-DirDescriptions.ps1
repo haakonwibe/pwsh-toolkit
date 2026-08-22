@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
     `dird` — Get-ChildItem with FILE_ID.DIZ-style descriptions appended,
@@ -22,6 +21,8 @@
     dird ~\Downloads -Bucket Installers
     dird -NoColor                # plain output (for pipes / non-TTY)
 #>
+
+#Requires -Version 7.0
 
 # ANSI color codes. Use the numeric SGR codes directly so this works on
 # PowerShell 7.0+ (older than 7.2 doesn't have $PSStyle).

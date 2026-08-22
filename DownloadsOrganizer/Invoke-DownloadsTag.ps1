@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
     Tag files in a directory with FILE_ID.DIZ-style AI descriptions.
@@ -47,6 +46,8 @@
     .\Invoke-DownloadsTag.ps1 -Force -Path D:\Inbox
     Re-tag everything under D:\Inbox.
 #>
+
+#Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'SkipPattern', Justification = 'Used in the skip-filter loop further down the script; the analyzer misses the cross-scope reference.')]
 param(

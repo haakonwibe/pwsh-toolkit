@@ -2026,3 +2026,71 @@ Describe 'Remove-StoredSecret (mocked vault)' {
         Should -Invoke Unlock-SecretStore -Times 1 -Exactly
     }
 }
+
+
+Describe 'DownloadsOrganizer wrappers' {
+
+    BeforeAll {
+        # Read parameter names straight from the source with the AST, so this
+        # needs neither the profile loaded nor the scripts executed.
+        function script:Get-ParamName {
+            param([string] $File, [string] $FunctionName)
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($File, [ref] $null, [ref] $null)
+            $block = if ($FunctionName) {
+                $fn = $ast.Find({
+                    param($n)
+                    $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $FunctionName
+                }, $true)
+                if (-not $fn) { throw "function not found: $FunctionName in $File" }
+                $fn.Body.ParamBlock
+            } else { $ast.ParamBlock }
+            @($block.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+        }
+
+        $script:aliasesFile = Join-Path $repoRoot 'Profiles/Common/Aliases.ps1'
+        $script:organizer   = Join-Path $repoRoot 'DownloadsOrganizer'
+    }
+
+    # The wrappers exist so `toolkit` can read a .SYNOPSIS off the function AST
+    # (an alias straight to the .ps1 would complete beautifully but vanish from
+    # the catalog). The cost of that choice is a parameter list in two places,
+    # so these tests are what stop the two copies drifting apart.
+    It 'tagdl declares exactly the parameters of the script it forwards to' {
+        $wrapper = Get-ParamName -File $script:aliasesFile -FunctionName 'Invoke-DownloadsTagger'
+        $target  = Get-ParamName -File (Join-Path $script:organizer 'Invoke-DownloadsTag.ps1')
+        $wrapper | Should -Be $target
+    }
+
+    It 'sortdl declares exactly the parameters of the script it forwards to' {
+        $wrapper = Get-ParamName -File $script:aliasesFile -FunctionName 'Invoke-DownloadsSorter'
+        $target  = Get-ParamName -File (Join-Path $script:organizer 'Invoke-DownloadsSort.ps1')
+        $wrapper | Should -Be $target
+    }
+
+    It 'forwards only bound parameters, so the script keeps its own defaults' {
+        # A default repeated in the wrapper is a second thing to drift; the
+        # wrapper must splat $PSBoundParameters rather than pass every param.
+        $src = Get-Content -Raw -LiteralPath $script:aliasesFile
+        $src | Should -Match 'DownloadsTagScript @PSBoundParameters'
+        $src | Should -Match 'DownloadsSortScript @PSBoundParameters'
+        $wrapper = [System.Management.Automation.Language.Parser]::ParseFile(
+            $script:aliasesFile, [ref] $null, [ref] $null).Find({
+                param($n)
+                $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $n.Name -eq 'Invoke-DownloadsTagger'
+            }, $true)
+        @($wrapper.Body.ParamBlock.Parameters | Where-Object { $_.DefaultValue }) | Should -BeNullOrEmpty
+    }
+
+    It 'keeps comment-based help reachable on every organizer script' {
+        # A #Requires statement above the help block disqualifies it, and
+        # Get-Help silently falls back to auto-generated syntax — which reads
+        # as "<name>.ps1 [[-Path] <string>] ..." rather than the synopsis.
+        foreach ($name in 'Invoke-DownloadsTag', 'Invoke-DownloadsSort', 'Get-DirDescriptions') {
+            $file = Join-Path $script:organizer "$name.ps1"
+            $synopsis = (Get-Help $file -ErrorAction SilentlyContinue).Synopsis
+            $synopsis | Should -Not -BeNullOrEmpty -Because "$name should expose comment-based help"
+            $synopsis | Should -Not -BeLike "$name*" -Because "$name fell back to generated syntax; move #Requires below the help block"
+        }
+    }
+}

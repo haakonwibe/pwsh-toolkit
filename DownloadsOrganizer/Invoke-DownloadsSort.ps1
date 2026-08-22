@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
     Sort tagged Downloads into per-bucket subfolders, with preview and undo.
@@ -54,6 +53,8 @@
     sortdl -Undo
     Put the last sort back the way it was.
 #>
+
+#Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string] $Path = (Join-Path $HOME 'Downloads'),
