@@ -46,6 +46,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Json.ps1')            # Show-Json + Format-JsonColor
     . (Join-Path $commonDir 'ScheduledTasks.ps1')  # Format-TaskResult, Test-ToolkitTaskVisible
     . (Join-Path $commonDir 'SecretManagement.ps1')  # Get-OrCreateSecret, Get-StoredSecrets, Remove-StoredSecret (vault cmdlets mocked below)
+    . (Join-Path $commonDir 'How.ps1')          # how, Get-HowCandidate, Out-HowCommand
     . (Join-Path $commonDir 'InstalledApps.ps1')   # Test-ArpEntryVisible, Split-UninstallCommand, Resolve-UninstallCommand
     . (Join-Path $repoRoot 'Profiles/M365/IntuneManagement.ps1')  # Get-ComplianceBucket, ConvertTo-IntuneDashboardHtml (defining these needs no Graph)
     . (Join-Path $repoRoot 'Profiles/M365/IntuneWin32Apps.ps1')   # Get-IntuneWin32App, Get-IntuneWin32AppContentInfo (mocked below)
@@ -224,6 +225,62 @@ Describe 'winup -Elevated' {
             $ArgumentList -contains '-All' -and          # extra arg forwarded to the script
             $ArgumentList -notcontains '-Elevated'        # the switch itself is consumed, not forwarded
         }
+    }
+}
+
+Describe 'sudo' {
+
+    BeforeEach {
+        Mock Get-SudoExe { $null }   # force the new-elevated-window fallback
+        Mock Start-Process { }       # never actually elevate
+    }
+
+    It 'runs a script block through an elevated pwsh' {
+        # Windows has no per-cmdlet elevation, so the block's text is handed to
+        # a new elevated process. This is the form to use for anything with
+        # switches of its own - see the binding tests below for why.
+        sudo { Get-ChildItem 'C:\Logs' | Remove-Item -Verbose }
+        Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+            $Verb -eq 'RunAs' -and
+            $ArgumentList -contains '-NoProfile' -and
+            $ArgumentList -contains '-Command' -and
+            @($ArgumentList | Where-Object { $_ -match 'Get-ChildItem' -and $_ -match 'Remove-Item -Verbose' }).Count -eq 1
+        }
+    }
+
+    It 'still forwards a bare command with its arguments' {
+        # Regression: a [scriptblock] parameter at position 0 is tried first for
+        # ANY positional argument, so a parameter-set implementation broke this
+        # with "cannot convert winget to ScriptBlock". The dispatch is on the
+        # runtime type of the first remaining argument instead.
+        sudo winget upgrade --all
+        Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+            @($ArgumentList | Where-Object { $_ -match 'winget upgrade --all' }).Count -eq 1
+        }
+    }
+
+    It 'keeps an argument containing spaces in one piece' {
+        sudo Remove-Item 'C:\Program Files\x.txt' -Force
+        Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+            @($ArgumentList | Where-Object { $_ -match "'C:\\Program Files\\x\.txt'" }).Count -eq 1
+        }
+    }
+
+    It 'opens a bare elevated shell when given nothing' {
+        sudo
+        Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter { $Verb -eq 'RunAs' }
+    }
+
+    It 'delegates to a real sudo instead of opening a new window' {
+        # A harmless stand-in for sudo.exe. Pointing this at the real one made
+        # the suite sit on a UAC prompt for two minutes - the call operator
+        # actually runs it, and Pester cannot intercept that.
+        $script:fakeSudo = Join-Path $TestDrive 'fake-sudo.cmd'
+        Set-Content -LiteralPath $script:fakeSudo -Value '@echo off' -Encoding ascii
+        Mock Get-SudoExe { $script:fakeSudo }
+        Mock Start-Process { }
+        sudo { Get-Date }
+        Should -Invoke Start-Process -Times 0 -Exactly
     }
 }
 
@@ -2092,5 +2149,271 @@ Describe 'DownloadsOrganizer wrappers' {
             $synopsis | Should -Not -BeNullOrEmpty -Because "$name should expose comment-based help"
             $synopsis | Should -Not -BeLike "$name*" -Because "$name fell back to generated syntax; move #Requires below the help block"
         }
+    }
+}
+
+
+Describe 'how (mocked Claude API)' {
+
+    BeforeAll {
+        # A realistic Opus 5 response: thinking is on by default, so the answer
+        # is NOT content[0] — that ordering is the regression this guards.
+        $script:okResponse = {
+            [pscustomobject]@{
+                stop_reason = 'end_turn'
+                content     = @(
+                    [pscustomobject]@{ type = 'thinking'; thinking = '' }
+                    [pscustomobject]@{ type = 'text'; text = (@{
+                        candidates = @(
+                            @{ command = 'Get-ChildItem -Recurse'; explanation = 'Everything below here.' }
+                            @{ command = 'dird -Newest';           explanation = 'With descriptions.' }
+                        )
+                    } | ConvertTo-Json -Depth 10) }
+                )
+            }
+        }
+    }
+
+    It 'reads the answer past the thinking block' {
+        Mock Invoke-RestMethod $script:okResponse
+        $c = @(Get-HowCandidate -Question 'q' -ApiKey 'k')
+        $c.Count            | Should -Be 2
+        $c[0].command       | Should -Be 'Get-ChildItem -Recurse'
+        $c[1].explanation   | Should -Be 'With descriptions.'
+    }
+
+    It 'asks for structured output so the picker has something to render' {
+        # Free text would put the model's formatting choices on this command's
+        # critical path; the schema is what makes the candidates addressable.
+        $script:body = $null
+        Mock Invoke-RestMethod { $script:body = $Body | ConvertFrom-Json; & $script:okResponse }
+        $null = Get-HowCandidate -Question 'q' -ApiKey 'k'
+        $script:body.output_config.format.type      | Should -Be 'json_schema'
+        $script:body.output_config.format.schema.required | Should -Be @('candidates')
+        $script:body.output_config.format.schema.properties.candidates.items.required |
+            Should -Be @('command', 'explanation')
+    }
+
+    It 'falls back to the shipped model when config names none, and yields to -Model' {
+        # config.psd1's HowModel picks the default per machine; with no config
+        # loaded (as here) the shipped choice stands. Sonnet is that choice on
+        # measured grounds - see the model note at the top of How.ps1.
+        $script:body = $null
+        Mock Invoke-RestMethod { $script:body = $Body | ConvertFrom-Json; & $script:okResponse }
+        $null = Get-HowCandidate -Question 'q' -ApiKey 'k'
+        $script:body.model | Should -Be 'claude-sonnet-5'
+        $null = Get-HowCandidate -Question 'q' -ApiKey 'k' -Model 'claude-opus-5'
+        $script:body.model | Should -Be 'claude-opus-5'
+    }
+
+    It 'asks for three candidates by default' {
+        # Measured: past rank two roughly half of what comes back restates
+        # something above it, so the extra rows buy latency, not options.
+        $script:HowCount | Should -Be 3
+        $script:body = $null
+        Mock Invoke-RestMethod { $script:body = $Body | ConvertFrom-Json; & $script:okResponse }
+        $null = Get-HowCandidate -Question 'q' -ApiKey 'k'
+        $script:body.system[0].text | Should -BeLike '*at most 3 candidates*'
+    }
+
+    It 'gives the model each toolkit command with its real parameters' {
+        # The catalog used to carry names and synopses only, which told the
+        # model a command existed while saying nothing about its surface - so
+        # it invented plausible switches (`dird -Recurse`, `task -New`). The
+        # parameters come from the live function, so they cannot drift.
+        $line = Format-HowCatalogEntry -Entry ([pscustomobject]@{
+            Command = 'how'; Function = 'how'; Synopsis = 'Ask Claude how to do something.' })
+        $line | Should -BeLike '*-Question*'
+        $line | Should -BeLike '*-NoToolkit*'
+        $line | Should -BeLike '*Ask Claude how to do something.*'
+        # Common parameters would be noise in every single line.
+        $line | Should -Not -BeLike '*-ErrorAction*'
+        $line | Should -Not -BeLike '*-Verbose*'
+    }
+
+    It 'still renders a catalog line for a command it cannot resolve' {
+        $line = Format-HowCatalogEntry -Entry ([pscustomobject]@{
+            Command = 'nope'; Function = 'No-SuchCommandAnywhere'; Synopsis = 'Does a thing.' })
+        $line | Should -BeLike '*nope*'
+        $line | Should -BeLike '*Does a thing.*'
+    }
+
+    It 'sends the toolkit catalog by default and drops it under -NoToolkit' {
+        # The catalog is the difference between answering `prj` and answering
+        # Set-Location, and it carries a cache breakpoint because it never varies.
+        # Discovery itself is Describe 'Get-ToolkitCommand's job; this mocks it
+        # so the assertion is about the wiring and nothing else.
+        $script:body = $null
+        Mock Get-ToolkitCommand { @([pscustomobject]@{ Command = 'prj'; Synopsis = 'Jump to a git repository.' }) }
+        Mock Invoke-RestMethod { $script:body = $Body | ConvertFrom-Json; & $script:okResponse }
+
+        $null = Get-HowCandidate -Question 'q' -ApiKey 'k'
+        $withCatalog = $script:body.system[0].text
+        $withCatalog | Should -BeLike '*prj -*Jump to a git repository.*'
+        $script:body.system[0].cache_control.type | Should -Be 'ephemeral'
+
+        $null = Get-HowCandidate -Question 'q' -ApiKey 'k' -NoToolkit
+        $script:body.system[0].text.Length | Should -BeLessThan $withCatalog.Length
+        $script:body.system[0].text | Should -Not -BeLike '*prj -*'
+    }
+
+    It 'still answers when the catalog is unavailable' {
+        # A broken catalog must cost context, not the whole command.
+        $script:body = $null
+        Mock Get-ToolkitCommand { throw 'catalog exploded' }
+        Mock Invoke-RestMethod { $script:body = $Body | ConvertFrom-Json; & $script:okResponse }
+        { Get-HowCandidate -Question 'q' -ApiKey 'k' } | Should -Not -Throw
+        $script:body.system[0].text | Should -Not -BeNullOrEmpty
+    }
+
+    It 'surfaces a safety refusal instead of parsing empty content' {
+        # A refusal is HTTP 200 with stop_reason 'refusal', so the status code
+        # never reveals it and content[] may be empty.
+        Mock Invoke-RestMethod { [pscustomobject]@{ stop_reason = 'refusal'; content = @() } }
+        { Get-HowCandidate -Question 'q' -ApiKey 'k' } | Should -Throw '*declined*'
+    }
+
+    It 'reports a response that carries no text block' {
+        Mock Invoke-RestMethod { [pscustomobject]@{ stop_reason = 'end_turn'; content = @(
+            [pscustomobject]@{ type = 'thinking'; thinking = '' }) } }
+        { Get-HowCandidate -Question 'q' -ApiKey 'k' } | Should -Throw '*no text content*'
+    }
+
+    It 'drops a candidate with no command rather than rendering a blank row' {
+        Mock Invoke-RestMethod { [pscustomobject]@{ stop_reason = 'end_turn'; content = @(
+            [pscustomobject]@{ type = 'text'; text = (@{ candidates = @(
+                @{ command = ''; explanation = 'empty' }
+                @{ command = 'ls'; explanation = 'real' }) } | ConvertTo-Json -Depth 10) }) } }
+        $c = @(Get-HowCandidate -Question 'q' -ApiKey 'k')
+        $c.Count      | Should -Be 1
+        $c[0].command | Should -Be 'ls'
+    }
+
+    It 'hands the command back without throwing in a host with no buffer' {
+        Mock Set-Clipboard { }
+        { Out-HowCommand -Command 'Get-Date' } | Should -Not -Throw
+    }
+
+    It 'never writes to the input buffer from the command path' {
+        # The regression this pins: PSConsoleReadLine::Insert() does NOT throw
+        # when called from a normal command — the line has already been
+        # submitted, so it appends the command to the echo of what the user
+        # typed and leaves the display mangled. Buffer edits are only safe
+        # inside the key handler, where the buffer is still live.
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $commonDir 'How.ps1'), [ref] $null, [ref] $null)
+        foreach ($name in 'Out-HowCommand', 'how', 'Get-HowCommand') {
+            $fn = $ast.Find({
+                param($n)
+                $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name
+            }, $true)
+            $fn | Should -Not -BeNullOrEmpty -Because "$name should exist"
+            $fn.Extent.Text | Should -Not -Match '::(Insert|Replace)\(' -Because "$name must not edit the input buffer"
+        }
+    }
+
+    It 'binds the chord that can reach the buffer' {
+        # The counterpart to the rule above: the buffer edit has to live
+        # somewhere, and that somewhere is the key handler.
+        $src = Get-Content -Raw -LiteralPath (Join-Path $commonDir 'How.ps1')
+        $src | Should -Match 'Set-PSReadLineKeyHandler'
+        $src | Should -Match '::Replace\('
+    }
+
+    It 'returns the command the picker selected' {
+        Mock Get-HowApiKey { 'sk-test' }
+        Mock Get-HowCandidate { @([pscustomobject]@{ command = 'Get-Date'; explanation = 'now' }) }
+        Mock Show-Picker { [pscustomobject]@{ command = 'Get-Date'; explanation = 'now' } }
+        Get-HowCommand -Question 'q' -Quiet | Should -Be 'Get-Date'
+    }
+
+    It 'returns nothing when the picker is cancelled' {
+        Mock Get-HowApiKey { 'sk-test' }
+        Mock Get-HowCandidate { @([pscustomobject]@{ command = 'Get-Date'; explanation = 'now' }) }
+        Mock Show-Picker { $null }
+        Get-HowCommand -Question 'q' -Quiet | Should -BeNullOrEmpty
+    }
+
+    It 'stays silent under -Quiet when the call fails' {
+        # The chord runs with the prompt line still on screen; anything written
+        # over it leaves artifacts, so the quiet path must swallow its own UX.
+        Mock Get-HowApiKey { 'sk-test' }
+        Mock Get-HowCandidate { throw 'boom' }
+        $out = Get-HowCommand -Question 'q' -Quiet 6>&1
+        $out | Should -BeNullOrEmpty
+    }
+
+    It 'stands down from the effort parameter for a model that rejects it' {
+        # Haiku 4.5 answers output_config.effort with a 400, which made -Model
+        # fail on the cheapest model anyone would reach for. An allow-list of
+        # which models accept it goes stale every release, so the request asks
+        # once and retries without it when the API says no.
+        $script:calls = 0
+        $script:bodies = @()
+        Mock Invoke-RestMethod {
+            $script:calls++
+            $script:bodies += ($Body | ConvertFrom-Json)
+            if ($script:calls -eq 1) {
+                $rec = [System.Management.Automation.ErrorRecord]::new(
+                    [Exception]::new('400 Bad Request'), 'x', 'InvalidOperation', $null)
+                $rec.ErrorDetails = [System.Management.Automation.ErrorDetails]::new(
+                    '{"error":{"message":"This model does not support the effort parameter."}}')
+                throw $rec
+            }
+            & $script:okResponse
+        }
+
+        $c = @(Get-HowCandidate -Question 'q' -ApiKey 'k' -Model 'claude-haiku-4-5')
+        $script:calls | Should -Be 2
+        $script:bodies[0].output_config.effort | Should -Not -BeNullOrEmpty
+        $script:bodies[1].output_config.PSObject.Properties.Name | Should -Not -Contain 'effort'
+        $script:bodies[1].output_config.format.type | Should -Be 'json_schema'
+        $c.Count | Should -Be 2
+    }
+
+    It 'does not retry a failure that has nothing to do with effort' {
+        $script:calls = 0
+        Mock Invoke-RestMethod { $script:calls++; throw 'overloaded_error' }
+        { Get-HowCandidate -Question 'q' -ApiKey 'k' } | Should -Throw
+        $script:calls | Should -Be 1
+    }
+
+    It 'keeps every row inside the width it is given' {
+        # Show-Picker renders any row that overflows the window as stripped
+        # plain text, because truncating mid-escape would leak a broken
+        # sequence into the frame. An unclamped long command therefore came out
+        # white and note-less among cyan neighbours - the row has to fit for
+        # the colour to survive.
+        $long = [pscustomobject]@{ command = ('Get-ChildItem ' + ('x' * 400)); explanation = 'Very long.' }
+        $cyan = [regex]::Escape(([char]27) + '[36m')
+        foreach ($w in 40, 80, 120, 200) {
+            $row = Format-HowRow -Item $long -Width $w
+            (Get-PickerPlainText $row).Length | Should -BeLessOrEqual $w
+            $row | Should -Match $cyan
+        }
+    }
+
+    It 'gives the whole row to the command when the note has no room' {
+        $row = Format-HowRow -Item ([pscustomobject]@{ command = ('a' * 100); explanation = 'notetext' }) -Width 60
+        Get-PickerPlainText $row | Should -Not -Match 'notetext'
+    }
+
+    It 'shows both columns when there is room' {
+        $row = Format-HowRow -Item ([pscustomobject]@{ command = 'ls'; explanation = 'notetext' }) -Width 60
+        Get-PickerPlainText $row | Should -Match 'notetext'
+    }
+
+    It 'is discoverable through the catalog' {
+        # Get-ToolkitCommand reads the toolkit's source files, so point it at
+        # the repo the same way Describe 'Get-ToolkitCommand' does.
+        $saved = $script:ProfileRoot
+        $script:ProfileRoot = Join-Path (Split-Path $PSScriptRoot -Parent) 'Profiles'
+        try {
+            $entry = Get-ToolkitCommand | Where-Object Command -EQ 'how'
+            $entry          | Should -Not -BeNullOrEmpty
+            $entry.Group    | Should -Be 'How-to lookup'
+            $entry.Synopsis | Should -Not -BeNullOrEmpty
+        }
+        finally { $script:ProfileRoot = $saved }
     }
 }

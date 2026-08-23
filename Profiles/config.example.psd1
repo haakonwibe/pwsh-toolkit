@@ -140,6 +140,18 @@
     # also disables tips and overrides this setting (handy for CI / scripts).
     DisableStartupTips = $false
 
+    # ─── how (AI command lookup) ─────────────────────────────────────────────
+    # Which model `how` asks. Sonnet 5 is the default because it is the balance
+    # point: a measured 5.4s median against Opus 5's 8.6s, roughly a quarter of
+    # the cost, and validity within about two points of it.
+    #   'claude-opus-5'    correctness first - it led on parameter validity,
+    #                      which is the metric that matters for code you run
+    #   'claude-sonnet-5'  the balanced default
+    #   'claude-haiku-4-5' fastest and cheapest (~3.6s), and the only one that
+    #                      did not benefit from prompt caching in testing
+    # -Model overrides this for a single call.
+    HowModel = 'claude-sonnet-5'
+
     # ─── Feature toggles ─────────────────────────────────────────────────────
     Features = @{
         # Skip the M365/ helpers even if Microsoft.Graph is installed.

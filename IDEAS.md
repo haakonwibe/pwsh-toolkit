@@ -237,7 +237,16 @@ sharper, publishable artifact than a personal convenience.
 **Why it fits the arc:** This is knowledge most admins never dig out. Separable
 from pwsh-toolkit — likely its own repo/module rather than a `Common/` helper.
 
-## 8. Conversational admin layer — natural language → Graph (wildcard)
+## 8. Conversational admin layer — natural language → Graph (wildcard) — 🌱 First step shipped 2026-08-23
+
+> Status note: `how` (`Profiles/Common/How.ps1`) is the read-only, general-purpose
+> half of this — natural language in, runnable commands out, with the guardrail
+> this section asks for: the chosen command lands on the prompt *unexecuted*, so
+> nothing runs until you press Enter. It answers Graph questions like any other,
+> but it does not execute them, and it holds no tenant context between calls.
+> What is still open below is the *doing* part: running the generated query and
+> shaping the result. `docs/how-eval.md` has the measured behaviour to build on.
+
 
 **What:** `ask -Do "devices not checked in for 30 days"` → generate the Graph
 query, run it, show the result. Natural language to Intune/Graph, in the shell.

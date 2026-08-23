@@ -445,8 +445,25 @@ function sudo {
         The backing executable is resolved explicitly (gsudo / sudo.exe), never the
         bare name `sudo` — which is this function — so it can't recurse into itself.
         Run with -Verbose to see which backend it picked.
+
+        PASS A SCRIPT BLOCK for anything with switches of its own. Windows has no
+        per-cmdlet elevation — elevating always starts a new process — so what
+        `sudo { ... }` does is hand the block's text to an elevated pwsh. That
+        also sidesteps a parsing trap in the bare-argument form: this function
+        has parameters of its own, and PowerShell binds them before it decides
+        what to forward. `sudo pwsh -NoProfile -Command "..."` therefore fails
+        outright, because -Command binds to THIS function and leaves `pwsh`
+        nowhere to go; quoting it ('-Command') is the escape hatch. Worse,
+        -Verbose, -ErrorAction and the other common parameters are swallowed
+        silently — they configure sudo and never reach your command. A script
+        block has no such collisions.
+
+        Because the block runs in a NEW process, it cannot see the variables,
+        functions or profile state of the session you launched it from.
     .PARAMETER Command
-        The command and its arguments to run elevated.
+        The command and its arguments to run elevated — or, as the first and
+        only argument, a script block to run elevated in a new pwsh. The block
+        form is preferred whenever the command has parameters of its own.
     .EXAMPLE
         sudo winget upgrade --all
 
@@ -459,12 +476,44 @@ function sudo {
         Same, but prints which backend it used (gsudo / native sudo / new-window
         fallback) — handy for confirming your setup.
     .EXAMPLE
+        sudo { Get-ChildItem 'C:\ProgramData\App\Logs' -Filter *.log -Recurse |
+               Where-Object LastWriteTime -lt (Get-Date).AddDays(-90) | Remove-Item }
+
+        Runs a whole pipeline elevated. Use this form for anything carrying its
+        own switches — the bare-argument form loses -Verbose and friends to this
+        function's own parameter binding.
+    .EXAMPLE
         sudo
 
         With no arguments, opens an elevated PowerShell (a one-shot elevated shell).
     #>
+    # [object[]], not [string[]]: a script block must survive binding as a block.
+    # Parameter sets cannot do this job — a set keyed on [scriptblock] at
+    # position 0 is tried first for ANY positional argument, so `sudo winget ...`
+    # dies on the type transform before the string set is ever considered.
+    # One list of remaining arguments, dispatched on type here, keeps both forms.
     [CmdletBinding()]
-    param([Parameter(ValueFromRemainingArguments)][string[]] $Command)
+    param([Parameter(ValueFromRemainingArguments)][object[]] $Command)
+
+    if ($Command -and $Command.Count -ge 1 -and $Command[0] -is [scriptblock]) {
+        # .ToString() on a script block yields its body without the braces,
+        # which is exactly what pwsh -Command wants. Passing -Command here is
+        # safe where the caller's could not be: these arguments go straight to
+        # the executable rather than back through this function's binder.
+        $inner = $Command[0].ToString()
+        $exe = Get-SudoExe
+        if ($exe) {
+            Write-Verbose "sudo: delegating a script block to $exe"
+            & $exe pwsh -NoProfile -Command $inner
+            return
+        }
+        Write-Verbose 'sudo: no enabled native sudo or gsudo — running the block in a new elevated window'
+        Start-Process pwsh -Verb RunAs -ArgumentList '-NoExit', '-NoProfile', '-Command', $inner
+        return
+    }
+
+    # Everything downstream treats the arguments as strings.
+    $Command = @($Command | ForEach-Object { [string]$_ })
 
     if (-not $Command -or $Command.Count -eq 0) {
         Write-Verbose 'sudo: no command — opening an elevated shell'

@@ -35,9 +35,25 @@ The eventual **v2 plan** is to split this into a module on PSGallery (`pwsh-tool
 
 These exist for non-obvious reasons. Don't "clean them up" without understanding why — most cost real debugging time to discover.
 
-### 1. Wrapper functions splat `@args`, not `@PassthruArgs`
+### 1. Wrapper functions splat `@args` — or declare parameters and splat `@PSBoundParameters`
 
-Profile alias wrappers like `winup`, `tagdl` use `function Foo { & script.ps1 @args }`. **Do not** convert to `param([Parameter(ValueFromRemainingArguments)] $PassthruArgs)` followed by `@PassthruArgs` — that splats positionally and breaks `-Name value` parameter pairs. The automatic `$args` array is what's needed.
+Profile alias wrappers come in two shapes, and the choice is about tab completion.
+
+`function Foo { & script.ps1 @args }` is the default (`winup`). **Do not** convert it to `param([Parameter(ValueFromRemainingArguments)] $PassthruArgs)` followed by `@PassthruArgs` — an array splatted with `@` binds *positionally*, which breaks `-Name value` pairs. The automatic `$args` array is what's needed.
+
+The cost of `@args` is that it is opaque to the completion engine: `tagdl -<Tab>` offered nothing, because the function declares no parameters. Where that matters, declare the parameters and splat **`$PSBoundParameters`** — a hashtable, so it splats by *name*, not position, and only the arguments the caller actually bound are forwarded:
+
+```powershell
+function Invoke-DownloadsTagger {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string] $Path, [int] $Limit, [switch] $Force, ...)
+    & $script:DownloadsTagScript @PSBoundParameters
+}
+```
+
+Two rules make this safe. Declare **no default values** in the wrapper — the script stays the single source of truth for both defaults and behaviour, and an unbound parameter simply is not forwarded. And keep declaration order identical to the script's, so positional binding matches. The pair drifts silently otherwise, so `tests/Unit.Tests.ps1` asserts the wrapper's parameter list equals the script's; see `Describe 'DownloadsOrganizer wrappers'`.
+
+`SupportsShouldProcess` on such a wrapper needs a justified `SuppressMessageAttribute` — the forwarded script owns the `ShouldProcess` call, but the attribute is what lets `-WhatIf` bind on the wrapper at all.
 
 ### 2. Wrapper script paths resolve from `$Config.ToolkitRoot` at profile-load time
 
@@ -129,6 +145,8 @@ Any helper that calls an LLM and prints the response to the terminal must:
 
 See `wtf` in `Profiles/Common/Wtf.ps1` for the reference pattern — both the prompt's FORMAT block and the post-process strip. Any future AI helper (`gcm`, etc.) should follow the same shape from day one instead of shipping with raw markdown leakage like v0.1.12-14 of `wtf` did.
 
+**When the response is data rather than prose, constrain it instead of cleaning it up.** `how` asks for `output_config.format` with a JSON schema, so the model's formatting choices never reach the console at all — the failure mode is removed rather than mitigated, and the result arrives addressable enough to hand to `Show-Picker`. Two response details bite anyone porting `wtf`'s call: thinking is on by default on current models, so the answer is **not** `content[0]` — find the block whose `type` is `text` — and a safety decline arrives as HTTP 200 with `stop_reason: refusal`, so the status code never reveals it.
+
 ### 12. Config slots are literal strings; env-var resolution lives in the loader
 
 `Profiles/config.psd1` is parsed by `Import-PowerShellDataFile`, which runs in restricted-language mode — no `$variable` references, no string interpolation, no cmdlet calls. The first time someone tries `Path = $env:TEMP` in `ExtraJumpFolders`, they get a confusing parse-time error.
@@ -177,6 +195,16 @@ Two constraints keep this working:
 The split exists because the two failure modes are disjoint. Every behavioral bug fixed in 0.1.25/0.1.26 (`touch` truncating files, `la` showing nothing, `which` returning blank / hanging on circular aliases / erroring on bad wildcards) **loaded cleanly and the command existed** — the smoke suite was structurally blind to all of them. Pure-logic functions (`touch`, `which`, `Get-PeekTool`'s dispatch, `Format-RemoteServerDisplay`, name-match helpers) get a unit test; anything that depends on a fully-assembled profile or a real prompt stays a smoke test. When you fix a behavioral bug, add the regression guard to `Unit.Tests.ps1` and confirm it actually *fails* against the old code before trusting it. CI discovers both files automatically via `Run.Path = './tests'`.
 
 ---
+
+### 15. The input buffer can only be edited from inside a PSReadLine key handler
+
+`[Microsoft.PowerShell.PSConsoleReadLine]::Insert()` / `::Replace()` write to the *live* input buffer. Called from an ordinary command they do not fail loudly: by then the line has been submitted, so the text is written into the already-drawn line and the display is left mangled — the command appears appended to the echo of what the user typed. A headless probe is no help either; outside a console the same call throws, which suggests a guard is enough. It is not.
+
+Inside a key handler registered with `Set-PSReadLineKeyHandler`, the buffer is still live, and this is the only place the "put a command on the user's prompt" behaviour can work. `how` is the reference: `Alt+h` reads the typed line with `GetBufferState`, and swaps it for the chosen command with `Replace(0, $line.Length, $cmd)`. The command form of `how` never touches the buffer — it uses history plus clipboard, which works in every host.
+
+Tests pin the rule in both directions: no `::Insert(`/`::Replace(` anywhere in the command path, and `::Replace(` present in the handler.
+
+Handlers must also stay quiet. The prompt line is still on screen while one runs, so anything written over it leaves artifacts — `Get-HowCommand -Quiet` exists for exactly this.
 
 ## What NOT to do
 

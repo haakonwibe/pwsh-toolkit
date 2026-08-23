@@ -119,6 +119,47 @@ chrome --headless=new --hide-scrollbars --user-data-dir=<temp> \
 
 `--force-prefers-reduced-motion` is the load-bearing flag: the platform bars grow via a CSS animation, and without it the screenshot lands mid-animation with the bars part-drawn. The template's own `prefers-reduced-motion` block turns the animation off, so the final width paints immediately. Then crop to the last content row.
 
+### 9. `how.png` — the command-suggestion picker
+
+The one shot that does NOT follow the ~1107px house width, and deliberately.
+
+The picker has two columns — the command and a one-line note — and the note is
+what makes it more than a list. Fit both or the shot is worthless: at 110
+columns the notes fall off the right edge entirely and the candidates then look
+identical to each other, because the part that differs (`-WhatIf` vs `-Force`)
+is beyond the cut. There are only two ways out, and only one of them keeps a
+question worth showing:
+
+- **Capture wide.** `how "delete log files older than 90 days"` needs roughly
+  1900px. That is the reference shot: three candidates that form a progression —
+  preview, then commit, then confirm each — which is the clearest argument for
+  offering candidates at all. Crop to the content and it lands about 1918x136,
+  a wide strip that reads fine in the README.
+- **Or ask something with short answers**, e.g. `how "look inside a zip without
+  extracting it"`, which fits at house width and shows answers reaching for the
+  toolkit's own commands (`peek -List`).
+
+The first is the better advert; the second is the tidier file. The repo ships
+the first — `cockpit.png` is already 2640px wide, so a wide asset is no novelty.
+
+Two things to know. The answer is generated fresh each call, so it will not be
+byte-identical to a previous capture — re-run until you get a set worth showing
+rather than trying to reproduce one. And the picker draws on the alternate
+screen buffer, so the shot contains only the picker: the header line, the key
+hint, the candidates, and the `1/3` counter. There is no prompt to include, which
+is why these shots are shorter than the terminal ones above.
+
+`how-run.png` is the companion shot, and it carries what the picker cannot: the
+payoff. Ask, take a candidate, press Up to recall it, run it — then crop to just
+those lines. A destructive question earns its place here because the answer
+arrives with `-WhatIf` already on it. Crop tight: the `What if:` output repeats
+one sentence per file, and two lines make the point that twenty do not.
+
+Keep the window narrow enough that the longest candidate still fits on its line.
+An overflowing row is rendered without colour by design (truncating mid-escape
+would leak a broken sequence), so a too-wide command shows up grey among cyan
+ones — visually wrong, and not what the command normally looks like.
+
 ## Optional: the OMP prompt segments
 
 If you want a sixth shot purely for the poster's hero block, capture just a single prompt line with all the trimmings showing — admin icon, M365 icon (after `Connect-Tenant`), folder name, git status. Save as `prompt-segments.png`. This one's purely decorative; the README doesn't depend on it.

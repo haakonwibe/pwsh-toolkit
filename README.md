@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://haakonwibe.github.io/pwsh-toolkit/poster.html">
-    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 66 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
+    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 67 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
   </a>
 </p>
 <p align="center">
@@ -81,10 +81,11 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 | **`rdp` / `rps`** | Remote-server shortcuts driven by `config.psd1`'s `RemoteServers` list. `rdp` launches `mstsc`, `rps` launches `Enter-PSSession`. No arg → picker (digit shortcuts, arrow keys, Esc). `rdp <name-or-address>` → fuzzy match against the configured list first, falling back to treating the argument as a literal address (so `rps 10.0.0.2` and `rdp myhost.lab` work without adding bookmarks first). |
 | **`ask <question>`** | Quick reference via the ch.at API. `ask -Brief "..."` for one-line answers. |
 | **`wtf`** | Ask Claude Haiku what went wrong with the last error. No-arg explains `$Error[0]`; `wtf "<pasted error>"` works on arbitrary text; `$Error[0] \| wtf` and `Some-Command 2>&1 \| wtf` pipe in. Reuses the `Anthropic-API-Key` SecretStore convention. ~$0.001 per call. |
+| **`how <question>`** / **Alt+h** | The forward-looking half of `wtf`: describe what you want to do and get back a short list of runnable commands, each with a one-line note on when to pick it. Two ways in, and the difference matters. `how "..."` prints the command you choose, copies it, and adds it to history (Up or Ctrl+V retrieves it). **Alt+h** takes whatever you've already typed as the question and *replaces the line* with the command you pick — nothing runs until you press Enter yourself. Only a PSReadLine key handler can write to the input buffer, which is why the on-your-prompt path is a chord rather than a switch. The toolkit's own command list rides along in the prompt, so `how "jump to a repo"` answers `prj` rather than a generic `Set-Location`; `-NoToolkit` asks without it. Quoting is optional. The model is `HowModel` in `config.psd1` (Claude Sonnet 5 by default; `-Model` overrides one call), and it asks for three candidates — both settled by measurement rather than taste, see [`docs/how-eval.md`](docs/how-eval.md). Same `Anthropic-API-Key` as `wtf` and `tagdl`. |
 | **`note` / `today` / `Find-Note` / `Set-NotesRoot`** | Lightweight markdown journal. `note "thing"` appends a timestamped bullet to `<NotesRoot>/YYYY-MM-DD.md`; `today` opens today's file in your default `.md` app. `NotesRoot` auto-detects via cascade (Obsidian vault inside OneDrive → any open vault → OneDrive Documents → local Documents); `Set-NotesRoot` shows the candidates interactively and prints the `config.psd1` snippet for persistence. `Find-Note "term"` greps across every note. |
 | **`docs` / `desktop` / `downloads` / `onedrive` / `home`** | Named navigation shortcuts. OneDrive paths auto-detect your Business org from `$env:OneDriveCommercial`. |
 | **`mkcd` / `up` / `..` / `...`** | `mkcd <dir>` creates a directory (and parents) and changes into it; `up [n]` ascends `n` levels (default 1); `..` / `...` are quick one/two-level shortcuts. |
-| **`sudo <command>`** | Run a command elevated. Delegates to a real `sudo` when present so it elevates in the *current* window — [gsudo](https://github.com/gerardog/gsudo) first, then Windows' built-in `sudo` (Windows 11 24H2+, once enabled in Settings → System → For developers). Falls back to a new elevated window when neither is available. No-arg opens an elevated shell; `-Verbose` reports which backend it used. |
+| **`sudo <command>`** | Run a command elevated. Delegates to a real `sudo` when present so it elevates in the *current* window — [gsudo](https://github.com/gerardog/gsudo) first, then Windows' built-in `sudo` (Windows 11 24H2+, once enabled in Settings → System → For developers). Falls back to a new elevated window when neither is available. No-arg opens an elevated shell; `-Verbose` reports which backend it used. **Pass a script block for anything with switches of its own** — `sudo { Get-ChildItem C:\ProgramData\App\Logs -Recurse \| Remove-Item -Verbose }` — which runs the block in an elevated `pwsh`. The bare-argument form has a parsing trap: `sudo` has parameters too, and PowerShell binds them first, so `sudo pwsh -NoProfile -Command "..."` fails outright (`-Command` binds to `sudo`) and `-Verbose`/`-ErrorAction` are swallowed silently rather than reaching your command. A block has no such collisions. It runs in a *new* process, so it sees none of your current variables or functions. |
 | **`toolkit` / `Get-ToolkitCommand`** | The "what can I do here?" command — since the toolkit isn't a module, this is its `Get-Command -Module` equivalent. `toolkit` prints every command grouped by area with a one-line synopsis; `Get-ToolkitCommand` returns the same as objects to pipe/filter (`Get-ToolkitCommand \| Where Group -eq 'Secrets'`). `-All` includes internal helpers. The list is discovered from the source at runtime, so it never goes stale. |
 | **`tip`** | Re-roll the rotating profile tip. Set `$env:PSPROFILE_NO_TIPS=1` to silence at startup. |
 | **`Get-TerminalFont` / `Set-TerminalFont`** | Read or change the Windows Terminal font face. `Get-TerminalFont` reports the effective font for the PowerShell profile; `Set-TerminalFont '<name>'` updates `settings.json` with a targeted, value-only edit (backs it up, validates the JSON, doesn't reflow the file) — Terminal reloads automatically. `-WhatIf` previews. |
@@ -106,6 +107,16 @@ Captured against a clean Windows Terminal with **MesloLGMDZ Nerd Font Mono** and
 ![pwsh-toolkit prompt with a startup tip](docs/screenshots/prompt-hero.png)
 
 A fresh tab: rotating profile tip on top, the polished Oh My Posh prompt with `pwsh` + user + battery + clock segments below.
+
+### Ask for a command (`how`)
+
+![how picker offering three candidate commands, each with a one-line note](docs/screenshots/how.png)
+
+Describe the job and get commands back rather than prose — each with a one-line note on when to pick it over the others. Here the three form a progression: preview with `-WhatIf`, then commit, then a per-file confirm. `how "..."` prints the one you choose and copies it; typing the question and pressing **Alt+h** instead *replaces* your line with it, unexecuted, so nothing runs until you press Enter. The toolkit's own commands and their real parameters ride along in the prompt, so answers prefer `prj` or `df` over the generic equivalents. See [`docs/how-eval.md`](docs/how-eval.md) for how the model and the candidate count were chosen.
+
+![the chosen command printed and copied, then recalled with Up and run](docs/screenshots/how-run.png)
+
+The other half: the command you pick is printed and copied, so **Up** brings it back ready to run — here with `-WhatIf`, which `how` reaches for unprompted when the request is destructive.
 
 ### Folder jumper (`j`)
 
@@ -168,6 +179,9 @@ The installer seeds `Profiles/config.psd1` from `Profiles/config.example.psd1`. 
         # @{ Label = 'GitHub'; Path = 'C:\GitHub' }
         # @{ Label = 'VMs';    Path = 'D:\VMs'   }
     )
+
+    HowModel      = 'claude-sonnet-5'     # which model `how` asks; 'claude-opus-5' for
+                                          # correctness first, 'claude-haiku-4-5' for speed
 
     DisableStartupTips = $false
     Features = @{ DisableM365 = $false }
@@ -278,6 +292,7 @@ Test-WSMan target                          # WinRM actually responding?
 - **[`Profiles/OhMyPosh/README.md`](Profiles/OhMyPosh/README.md)** — OMP prompt segments, theme customization
 - **[`Profiles/Machines/README.md`](Profiles/Machines/README.md)** — per-machine configuration examples
 - **[`Profiles/Hosts/README.md`](Profiles/Hosts/README.md)** — per-host configuration examples
+- **[`docs/how-eval.md`](docs/how-eval.md)** — how `how`'s model, candidate count and prompt were chosen, and the measurements behind them
 - **[`CHANGELOG.md`](CHANGELOG.md)** — release history
 - **[`IDEAS.md`](IDEAS.md)** — the design record for candidate helpers (shipped: `prj`, `recent`, `cb`; shelved: `gcm`)
 
