@@ -274,6 +274,26 @@ function Format-HowRow {
     }
 }
 
+# What the picker shows beneath the list for the highlighted candidate.
+#
+# When the row had to clip the command, the note alone is not enough: at 110
+# columns two candidates can render as identical text, and the thing that
+# differs -- `-WhatIf` against `-Force` -- is past the cut. Leading with the
+# whole command means the choice is made on what will actually run rather than
+# on its description. When the command already fits on its row, repeating it
+# here would be noise, so the note stands alone.
+function Format-HowDetail {
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] $Item,
+        [Parameter(Mandatory)][int] $RowWidth
+    )
+    $cmd  = [string]$Item.command
+    $note = [string]$Item.explanation
+    if ($cmd.Length -le $RowWidth) { return $note }
+    if ($note) { "$cmd  $([char]0x2014)  $note" } else { $cmd }
+}
+
 # Resolve the API key the same way wtf does: SecretStore first, env var second.
 # The Get-OrCreateSecret call is deliberately left unwrapped so its specific
 # failure messages ("Failed to unlock SecretStore: ...") reach the user instead
@@ -335,7 +355,16 @@ function Get-HowCommand {
 
     $chosen = Show-Picker -Items $candidates -Title "how: $Question" `
         -Hint 'Up/Down + Enter to take a command  Esc cancel  |  digits 1-9 jump' `
-        -RenderRow { param($item, $width) Format-HowRow -Item $item -Width $width }
+        -RenderRow { param($item, $width) Format-HowRow -Item $item -Width $width } `
+        -DetailRow {
+            # The row truncates its note to fit, and on a narrow terminal drops
+            # it entirely - which loses the one thing that makes the candidates
+            # comparable. The detail line carries the highlighted candidate
+            # whole, at any width. The row budget mirrors what Show-Picker hands
+            # RenderRow: the window less its gutter.
+            param($item)
+            Format-HowDetail -Item $item -RowWidth ([Math]::Max(20, [Console]::WindowWidth - 8))
+        }
 
     if ($chosen) { $chosen.command } else { $null }
 }

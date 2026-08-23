@@ -87,6 +87,54 @@ function Get-PickerPlainText {
     return ($Text -replace "`e\[[0-9;]*m", '')
 }
 
+function Split-PickerDetail {
+    <#
+    .SYNOPSIS
+        Word-wrap a detail string into a fixed number of lines.
+    .DESCRIPTION
+        Always returns exactly MaxLines strings, padded with empties. The fixed
+        height is the point: the detail block sits between the list and the
+        status line, so a variable one would make the whole frame jump every
+        time the cursor moved.
+    #>
+    [OutputType([string[]])]
+    param([string] $Text, [int] $Width, [int] $MaxLines = 2)
+
+    $out = New-Object System.Collections.Generic.List[string]
+    $Width = [Math]::Max(8, $Width)
+
+    if ($Text) {
+        $line = ''
+        foreach ($word in ($Text -split '\s+' | Where-Object { $_ })) {
+            if (-not $line) { $candidate = $word } else { $candidate = "$line $word" }
+            if ($candidate.Length -le $Width) {
+                $line = $candidate
+                continue
+            }
+            if ($out.Count -eq $MaxLines - 1) { break }   # last line: stop and truncate below
+            if ($line) { $out.Add($line) }
+            # A single word longer than the width would loop forever otherwise.
+            $line = if ($word.Length -gt $Width) { $word.Substring(0, $Width) } else { $word }
+        }
+        if ($line -and $out.Count -lt $MaxLines) { $out.Add($line) }
+
+        # Anything that did not fit is marked, so a clipped note never reads as
+        # a complete one.
+        $shown = ($out -join ' ')
+        if ($shown.Length -lt (($Text -split '\s+' | Where-Object { $_ }) -join ' ').Length) {
+            $i = $out.Count - 1
+            $trim = [Math]::Max(1, $Width - 1)
+            $tail = $out[$i]
+            if ($tail.Length -gt $trim) { $tail = $tail.Substring(0, $trim) }
+            $out[$i] = $tail + [char]0x2026
+        }
+    }
+
+    while ($out.Count -lt $MaxLines) { $out.Add('') }
+    # Always MaxLines items, so a caller can foreach or index without checking.
+    $out.ToArray()
+}
+
 function Show-Picker {
     <#
     .SYNOPSIS
@@ -108,12 +156,20 @@ function Show-Picker {
         Header line shown at the top.
     .PARAMETER Hint
         Sub-header line describing the keys.
+    .PARAMETER DetailRow
+        Optional scriptblock ($item) -> string, shown in full beneath the list
+        for the HIGHLIGHTED item only. Use it when a row carries more than fits
+        on its line: the row can truncate freely while the detail stays whole.
+        Costs three rows of viewport (a separator plus two wrapped lines),
+        reserved whether or not the current item has anything to say, so the
+        frame does not jump as the cursor moves.
     #>
     param(
         [Parameter(Mandatory)] [array] $Items,
         [Parameter(Mandatory)] [scriptblock] $RenderRow,
         [string] $Title = 'Select',
-        [string] $Hint  = 'Up/Down + Enter  Esc cancel  |  digits 1-9 jump'
+        [string] $Hint  = 'Up/Down + Enter  Esc cancel  |  digits 1-9 jump',
+        [scriptblock] $DetailRow
     )
 
     if (-not $Items -or $Items.Count -eq 0) { return $null }
@@ -130,8 +186,10 @@ function Show-Picker {
             $winW = [Math]::Max(20, [Console]::WindowWidth - 1)
             $winH = [Math]::Max(8,  [Console]::WindowHeight)
 
-            # Header (title, hint, blank) + footer (status) + 1 safety row.
-            $viewRows = [Math]::Max(1, $winH - 3 - 1 - 1)
+            # Header (title, hint, blank) + footer (status) + 1 safety row,
+            # plus the detail block when one is asked for.
+            $detailH  = if ($DetailRow) { 3 } else { 0 }
+            $viewRows = [Math]::Max(1, $winH - 3 - 1 - 1 - $detailH)
             $viewRows = [Math]::Min($viewRows, $Items.Count)
             $scrollTop = Get-PickerScrollTop -Cursor $cursor -ScrollTop $scrollTop -ViewRows $viewRows -Count $Items.Count
 
@@ -167,6 +225,17 @@ function Show-Picker {
                         $prefix = "  {0} $esc[36m{1}$esc[0m  " -f $marker, $numKey   # hotkey column in cyan
                         [void]$sb.AppendLine("$prefix$body$esc[0m" + ''.PadRight($winW - $visible))
                     }
+                }
+            }
+
+            if ($DetailRow) {
+                # Best-effort: a detail that throws must not take the picker
+                # down mid-frame — the list is still usable without it.
+                $detail = ''
+                try { $detail = [string](& $DetailRow $Items[$cursor]) } catch { $detail = '' }
+                [void]$sb.AppendLine(''.PadRight($winW))
+                foreach ($dl in (Split-PickerDetail -Text $detail -Width ($winW - 6) -MaxLines 2)) {
+                    [void]$sb.AppendLine(("$esc[90m    $dl$esc[0m").PadRight($winW + 9))
                 }
             }
 

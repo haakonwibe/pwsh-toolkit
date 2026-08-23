@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 > The detailed pre-release history (0.1.0–0.1.62) was condensed into the summary
 > below when the repository was squashed for its public release.
 
+## [Unreleased]
+
+### Changed
+
+- `how`'s picker shows the highlighted candidate in full beneath the list. The rows have always truncated to fit, which is fine on a wide terminal and quietly destructive on a narrow one: at 110 columns a 129-character command does not fit even on its own, so the notes were dropped entirely and two candidates rendered as identical text with the part that differs — `-WhatIf` against `-Force` — past the cut. The detail block leads with the whole command whenever the row had to clip it, then the note; when the command already fits, repeating it would be noise and the note stands alone. `Show-Picker` gained an opt-in `-DetailRow` scriptblock for this, so the nine other pickers are untouched — the alternative, multi-line rows, would have meant reworking the cursor, scroll and highlight maths that every one of them depends on, to fix a problem only `how` has. The block's height is fixed at three rows whether or not the current item fills them, because a fitted one would move the status line on every keypress. Wrapping is `Split-PickerDetail`, a pure function alongside `Get-PickerScrollTop`; writing it that way is what surfaced a word longer than the wrap width looping forever, which would have hung the picker rather than failed it.
+
 ## [0.7.0] - 2026-08-23
 
 ### Added

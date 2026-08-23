@@ -1556,6 +1556,51 @@ Describe 'Get-PickerScrollTop (viewport scrolling math)' {
     }
 }
 
+Describe 'Split-PickerDetail (picker detail line)' {
+
+    It 'wraps at word boundaries within the width' {
+        $r = @(Split-PickerDetail -Text 'Preview which log files are older than 90 days without deleting anything' -Width 40)
+        $r.Count | Should -Be 2
+        foreach ($line in $r) { $line.Length | Should -BeLessOrEqual 40 }
+        $r[0] | Should -BeLike 'Preview which*'
+    }
+
+    It 'always returns exactly MaxLines, so the frame cannot jump' {
+        # A variable-height detail block would move the status line every time
+        # the cursor moved, which is why the height is fixed rather than fitted.
+        (@(Split-PickerDetail -Text 'Short.' -Width 60)).Count       | Should -Be 2
+        (@(Split-PickerDetail -Text '' -Width 60)).Count             | Should -Be 2
+        (@(Split-PickerDetail -Text $null -Width 60)).Count          | Should -Be 2
+        (@(Split-PickerDetail -Text 'a b c' -Width 60 -MaxLines 3)).Count | Should -Be 3
+    }
+
+    It 'leaves a note that fits completely unmarked' {
+        $r = @(Split-PickerDetail -Text 'Actually delete them.' -Width 60)
+        $r[0] | Should -Be 'Actually delete them.'
+        $r[1] | Should -Be ''
+    }
+
+    It 'marks a clipped note so it cannot read as a complete one' {
+        $r = @(Split-PickerDetail -Text ('word ' * 60) -Width 30)
+        ($r -join '') | Should -BeLike "*$([char]0x2026)"
+    }
+
+    It 'terminates on a word longer than the width' {
+        # Regression: the naive loop never shrinks the line in this case and
+        # spins forever, which would hang the picker rather than fail it.
+        $r = @(Split-PickerDetail -Text ('x' * 200) -Width 20)
+        $r.Count | Should -Be 2
+        $r[0].Length | Should -BeLessOrEqual 20
+    }
+
+    It 'is offered by the picker and used by how' {
+        $picker = Get-Content -Raw -LiteralPath (Join-Path $commonDir 'Picker.ps1')
+        $picker | Should -Match '\[scriptblock\] \$DetailRow'
+        $how = Get-Content -Raw -LiteralPath (Join-Path $commonDir 'How.ps1')
+        $how | Should -Match '-DetailRow'
+    }
+}
+
 Describe 'Picker hotkeys (1-9 then a-z)' {
 
     It 'maps indices 0-8 to digits 1-9' {
@@ -2391,6 +2436,29 @@ Describe 'how (mocked Claude API)' {
             (Get-PickerPlainText $row).Length | Should -BeLessOrEqual $w
             $row | Should -Match $cyan
         }
+    }
+
+    It 'puts the whole command in the detail line when the row had to clip it' {
+        # At narrow widths two candidates can render as identical rows, with the
+        # part that differs (-WhatIf vs -Force) past the cut. Leading the detail
+        # with the command means the choice is made on what will run.
+        $item = [pscustomobject]@{
+            command     = 'Get-ChildItem -Recurse | Remove-Item -Force ' + ('#' * 80)
+            explanation = 'Deletes them.'
+        }
+        $d = Format-HowDetail -Item $item -RowWidth 60
+        $d | Should -BeLike '*Remove-Item -Force*'
+        $d | Should -BeLike '*Deletes them.*'
+    }
+
+    It 'leaves the command out of the detail when it already fits its row' {
+        $item = [pscustomobject]@{ command = 'ls'; explanation = 'List the folder.' }
+        Format-HowDetail -Item $item -RowWidth 60 | Should -Be 'List the folder.'
+    }
+
+    It 'falls back to the command alone when a candidate has no note' {
+        $item = [pscustomobject]@{ command = ('x' * 80); explanation = '' }
+        Format-HowDetail -Item $item -RowWidth 20 | Should -Be ('x' * 80)
     }
 
     It 'gives the whole row to the command when the note has no room' {
