@@ -725,6 +725,13 @@ function Unregister-PwshTask {
     if ($t) { Unregister-ScheduledTask -TaskPath $script:PwshTaskPath -TaskName $script:PwshTaskName -Confirm:$false }
 }
 
+function Get-PwshStorePackage {
+    # The Store (MSIX) build for the current user, if any. Server SKUs can lack
+    # the Appx module entirely - no module, no Store build.
+    if (-not (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue)) { return }
+    Get-AppxPackage -Name 'Microsoft.PowerShell' -ErrorAction SilentlyContinue
+}
+
 function Get-PwshTaskReference {
     # Scheduled tasks that run pwsh: the Store alias (will break when the
     # Store build is removed) or the 7 path (what they should use).
@@ -1058,19 +1065,28 @@ function Invoke-PwshInstall {
         Write-PwshLog "Registered $($script:PwshTaskPath)$($script:PwshTaskName) (daily and at startup, as SYSTEM)." -Level OK
     } finally { Exit-PwshLock }
 
-    $refs = @(Get-PwshTaskReference -Ctx $Ctx)
+    # Report only what is still left to do, so a re-run (which is how the
+    # installed copy gets refreshed) doesn't repeat finished steps.
+    $refs       = @(Get-PwshTaskReference -Ctx $Ctx)
+    $store      = @($refs | Where-Object { $_.Kind -eq 'Store' })
+    $stable     = @($refs | Where-Object { $_.Kind -eq 'Stable' })
+    $storeBuild = @(Get-PwshStorePackage)
     Write-Host ''
-    Write-Host '  Next steps' -ForegroundColor Cyan
-    $store = @($refs | Where-Object { $_.Kind -eq 'Store' })
+    if ($store.Count -eq 0 -and $storeBuild.Count -eq 0) {
+        Write-Host '  Done - no scheduled task runs the Store build, and the Store build is not installed.' -ForegroundColor Green
+    } else {
+        Write-Host '  Next steps' -ForegroundColor Cyan
+    }
     if ($store.Count -gt 0) {
         Write-Host '  These scheduled tasks run the Store build and stop working when it is removed.' -ForegroundColor Yellow
         Write-Host "  Re-point them at $exe first:" -ForegroundColor Yellow
         foreach ($r in $store) { Write-Host "    $($r.Task)" }
     }
-    $stable = @($refs | Where-Object { $_.Kind -eq 'Stable' })
-    if ($stable.Count -gt 0) { Write-Host ("  Working again now that $exe exists: " + (($stable | ForEach-Object { $_.Task }) -join ', ')) -ForegroundColor DarkGray }
-    Write-Host '  Open a new terminal, then from the NEW pwsh remove the Store build:' -ForegroundColor Gray
-    Write-Host '    Get-AppxPackage Microsoft.PowerShell | Remove-AppxPackage' -ForegroundColor White
+    if ($storeBuild.Count -gt 0) {
+        Write-Host '  Open a new terminal, then from the NEW pwsh remove the Store build:' -ForegroundColor Gray
+        Write-Host '    Get-AppxPackage Microsoft.PowerShell | Remove-AppxPackage' -ForegroundColor White
+    }
+    if ($stable.Count -gt 0) { Write-Host ("  Tasks using ${exe}: " + (($stable | ForEach-Object { $_.Task }) -join ', ')) -ForegroundColor DarkGray }
     Write-Host ''
 }
 

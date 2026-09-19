@@ -192,7 +192,9 @@ function Set-PwshAppPath { param([string] $Exe, [switch] $Remove) $script:H.Call
 function Set-PwshShortcut { param([string] $Exe, [switch] $Remove) $script:H.Calls.Add("shortcut:${Exe}:$Remove") }
 function Register-PwshTask { param($Ctx) $null = $Ctx; $script:H.Calls.Add('task:register') }
 function Unregister-PwshTask { $script:H.Calls.Add('task:unregister') }
-function Get-PwshTaskReference { param($Ctx) $null = $Ctx }
+function Get-PwshTaskReference { param($Ctx) $null = $Ctx; $script:H.TaskRefs }
+function Get-PwshStorePackage { $script:H.StorePkg }
+$script:H.TaskRefs = @(); $script:H.StorePkg = @()
 
 # ================= Update transaction =================
 $root = New-TempRoot
@@ -281,7 +283,14 @@ $ctx2 = New-PwshContext -InstallRoot $root2
 $null = New-Item -ItemType Directory -Path "$root2\7\Modules\Microsoft.PowerShell.Utility", "$root2\7\Scripts\InstalledScriptInfos", "$root2\Modules\Az"
 Set-Content -LiteralPath "$root2\Modules\Az\keep.psd1" -Value '@{}'
 $script:H.Stable = 'v7.6.6'; $script:H.Calls.Clear()
-Invoke-PwshInstall -Ctx $ctx2 -SourceScript $scriptPath
+$script:H.StorePkg = @([pscustomobject]@{ Name = 'Microsoft.PowerShell' })
+$script:H.TaskRefs = @([pscustomobject]@{ Task = '\iCloud Sync'; Kind = 'Store'; Execute = 'x' })
+$installText = (Invoke-PwshInstall -Ctx $ctx2 -SourceScript $scriptPath 6>&1 | Out-String)
+Check 'install lists the steps still left: tasks to re-point, the Store build to remove' { $installText -like '*Next steps*' -and $installText -like '*\iCloud Sync*' -and $installText -like '*Remove-AppxPackage*' }
+$script:H.StorePkg = @(); $script:H.TaskRefs = @([pscustomobject]@{ Task = '\iCloud Sync'; Kind = 'Stable'; Execute = 'x' })
+$installText = (Invoke-PwshInstall -Ctx $ctx2 -SourceScript $scriptPath 6>&1 | Out-String)
+Check 're-running install says Done instead of repeating finished steps' { $installText -like '*Done - no scheduled task runs the Store build*' -and $installText -notlike '*Next steps*' -and $installText -notlike '*Remove-AppxPackage*' }
+$script:H.TaskRefs = @()
 Check 'install moves the empty leftover 7 aside' { @(Get-ChildItem -LiteralPath $root2 -Directory | Where-Object { $_.Name -like '7.debris-*' }).Count -eq 1 }
 Check 'install activates the latest Stable' { (Get-PwshLinkTarget $ctx2.Link) -eq "$($ctx2.Versions)\7.6.6" }
 Check 'install copies the updater into the admin-only folder' { (Get-FileHash -LiteralPath $ctx2.Installed).Hash -eq (Get-FileHash -LiteralPath $scriptPath).Hash }
