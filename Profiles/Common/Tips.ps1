@@ -23,7 +23,8 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'Find-File <name>  —  recursive filename search from the current directory';                 E = 'Try: Find-File config.json' }
     [pscustomobject]@{ H = 'Start-AdminTerminal  —  launch a new elevated Windows Terminal';                            E = 'Try: Start-AdminTerminal   (useful before winup on a non-elevated shell)' }
     [pscustomobject]@{ H = 'wtf  —  ask Claude what went wrong with the last error (or any piped text)';               E = 'Try: wtf   (or: $Error[0] | wtf, or: wtf "<pasted error>")' }
-    [pscustomobject]@{ H = 'note "thing"  —  timestamped append to today''s markdown journal (Obsidian-friendly)';      E = 'Try: note Met with Karen re: policy rollout   (today opens the file)' }
+    [pscustomobject]@{ H = 'note "thing"  —  timestamped append to today''s markdown journal (Obsidian-friendly)';      E = 'Try: note Met with Karen re: policy rollout   (today prints the day; note -Edit opens it)' }
+    [pscustomobject]@{ H = 'notes [query]  —  pick a past day''s note and read it in the terminal';                     E = 'Try: notes   or   notes karen   (only the days that mention it)' }
     [pscustomobject]@{ H = 'Find-Note <query>  —  grep across every daily note';                                        E = 'Try: Find-Note "registry policy"' }
     [pscustomobject]@{ H = 'Set-NotesRoot  —  interactive picker over Obsidian vaults + OneDrive paths for NotesRoot';  E = 'Try: Set-NotesRoot   (default auto-detects, picker is for overriding)' }
     [pscustomobject]@{ H = 'Get-OrCreateSecret  —  retrieve a SecretStore secret or prompt to create it';               E = 'Try: Get-OrCreateSecret -Name "Weather-API-Key" -AsPlainText' }

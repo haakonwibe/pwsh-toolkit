@@ -36,7 +36,7 @@ $script:ToolkitGroups = [ordered]@{
 
 # Functions that exist only to support the public commands — hidden unless -All.
 $script:ToolkitInternalCommands = @(
-    'Invoke-JumpTo'
+    'Invoke-JumpTo', 'Get-JumpStarter'
     'Get-JumpBookmark', 'Save-JumpBookmark', 'Sync-JumpBookmark', 'Add-JumpBookmark', 'Remove-JumpBookmark'
     'Get-MgGraphAllPage', 'Get-IntuneOverviewData', 'Get-ComplianceBucket', 'Get-DeviceSyncAge', 'ConvertTo-IntuneDashboardHtml', 'Show-IntuneDashboard'
     'Get-CompliancePctBucket', 'Get-DeviceKey', 'Get-DeviceComplianceReason'
@@ -54,7 +54,7 @@ $script:ToolkitInternalCommands = @(
     'Get-TerminalSettingsPath', 'Update-FontFaceText'
     'Test-RemoteServersConfigured', 'Invoke-RemoteServerPicker', 'Get-RemoteServerByMatch'
     'Resolve-RemoteServer', 'Format-RemoteServerDisplay', 'Format-PsRemotingError'
-    'Get-ObsidianVault', 'Resolve-NotesRoot'
+    'Get-ObsidianVault', 'Resolve-NotesRoot', 'Get-NoteFile', 'ConvertTo-NotePlainLine', 'Get-NoteSummary', 'Show-NoteFile'
     'Test-SecretStoreInteractive'
     'Test-ScheduledTaskAvailable', 'Test-ToolkitTaskVisible', 'Format-TaskResult'
     'Get-ToolkitScheduledTask', 'Resolve-ScheduledTask', 'Invoke-ScheduledTaskAction', 'Show-ScheduledTaskDetail'

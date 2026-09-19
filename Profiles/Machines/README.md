@@ -74,7 +74,7 @@ checks, conditional paths — belongs here, because this file is dot-sourced
 # File: LAPTOP-WORK.ps1
 
 # Append destinations the picker can't express as plain literals.
-$script:JumpFolders += [pscustomobject]@{ Label = 'Temp'; Path = $env:TEMP }
+$script:JumpFolders += [pscustomobject]@{ Label = 'Repos'; Path = "$env:USERPROFILE\source\repos" }
 $script:JumpFolders += [pscustomobject]@{ Label = 'VMs';  Path = 'D:\VMs' }
 
 # Only add the drive if it's actually mapped on this machine.
@@ -88,7 +88,7 @@ Get-ChildItem 'C:\GitHub' -Directory -ErrorAction SilentlyContinue | ForEach-Obj
 }
 ```
 
-After reloading, `j` shows the new entries and `j temp` jumps straight there.
+After reloading, `j` shows the new entries and `j repos` jumps straight there.
 For static, literal-only paths prefer `config.psd1` instead:
 
 ```powershell

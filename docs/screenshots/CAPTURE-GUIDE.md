@@ -33,13 +33,13 @@ Don't include the post-prompt cursor blinking; capture before typing anything.
 
 ### 2. `j-picker.png` — Folder jumper
 
-Make sure your `config.psd1`'s `ExtraJumpFolders` has at least 3-5 sensible entries (Home, Downloads, OneDrive, plus a couple of yours — GitHub, Projects, whatever's not too personal). Then run:
+The built-in destinations (Home, Downloads, OneDrive, Program Files, Temp, Windows, …) fill most of the list on their own. Add a couple of your own with `j -Add` so the green bookmark rows show too — GitHub, Projects, whatever's not too personal. Then run:
 
 ```
 j
 ```
 
-Press `↓` once or twice so a non-first row is highlighted (proves it's interactive, not just a list). Capture the whole alt-screen-buffer view including the title bar (`Jump`) and the help line (`Digits 1-9 jump  Up/Down + Enter  Esc cancel  | Tip: j <text> jumps directly`).
+Press `↓` once or twice so a non-first row is highlighted (proves it's interactive, not just a list). Capture the whole alt-screen-buffer view including the title bar (`Jump`) and the help line (`Up/Down + Enter  PgUp/PgDn  Esc cancel  |  j <text> jumps directly`).
 
 Press `Esc` to dismiss without jumping when done.
 

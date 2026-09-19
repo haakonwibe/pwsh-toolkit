@@ -38,6 +38,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Peek.ps1')           # Get-PeekTool + exe finders
     . (Join-Path $commonDir 'RemoteServers.ps1')  # Format-RemoteServerDisplay, Get-RemoteServerByMatch
     . (Join-Path $commonDir 'Picker.ps1')         # Get-PickerScrollTop
+    . (Join-Path $commonDir 'Notes.ps1')          # note, notes, Get-NoteSummary (NotesRoot preset above, so no cascade)
     . (Join-Path $commonDir 'Projects.ps1')       # Find-GitProject, Get-ProjectRoot
     . (Join-Path $commonDir 'SystemUtilities.ps1') # Test-NativeSudoEnabled
     . (Join-Path $commonDir 'PoshThemes.ps1')      # Get-PoshThemePool
@@ -679,6 +680,201 @@ Describe 'Format-FileAge' {
     It 'falls back to a date at 30+ days' {
         $t = (Get-Date).AddDays(-45)
         Format-FileAge $t | Should -Be $t.ToString('yyyy-MM-dd')
+    }
+}
+
+Describe 'Daily notes (note / notes)' {
+
+    BeforeEach {
+        $script:savedNotesRoot = $script:Config.NotesRoot
+        $script:nroot = Join-Path ([IO.Path]::GetTempPath()) ("notes-ut-" + [Guid]::NewGuid().ToString('N'))
+        $script:Config.NotesRoot = $nroot
+        $script:todayFile = Join-Path $nroot "$(Get-Date -Format 'yyyy-MM-dd').md"
+    }
+    AfterEach {
+        $script:Config.NotesRoot = $savedNotesRoot
+        Remove-Item -LiteralPath $nroot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'strips note markup to plain text for picker rows' {
+        ConvertTo-NotePlainLine '- **09:13** — Met with Karen' | Should -Be '09:13  Met with Karen'
+        ConvertTo-NotePlainLine '- a hand-written bullet'      | Should -Be 'a hand-written bullet'
+        ConvertTo-NotePlainLine '## Meetings'                  | Should -Be 'Meetings'
+        ConvertTo-NotePlainLine 'plain **bold** text'          | Should -Be 'plain bold text'
+    }
+
+    It 'lists only dated files, newest first' {
+        New-Item -ItemType Directory -Path $nroot | Out-Null
+        foreach ($n in '2026-05-25.md', '2026-09-18.md', '2026-09-10.md', 'Inbox.md', '2026-09-18.txt') {
+            Set-Content -LiteralPath (Join-Path $nroot $n) -Value 'x'
+        }
+        (Get-NoteFile -Root $nroot).Name | Should -Be @('2026-09-18.md', '2026-09-10.md', '2026-05-25.md')
+    }
+
+    It 'returns nothing for a missing notes folder' {
+        @(Get-NoteFile -Root $nroot).Count | Should -Be 0
+    }
+
+    It 'summarises a note without its date header or blank lines' {
+        New-Item -ItemType Directory -Path $nroot | Out-Null
+        Set-Content -LiteralPath (Join-Path $nroot '2026-09-10.md') -Encoding utf8 -Value "# 2026-09-10`n`n- **09:00** — First`n`n- **10:00** — Second"
+        $s = @(Get-NoteSummary -File (Get-NoteFile -Root $nroot))
+        $s.Count    | Should -Be 1
+        $s[0].Date  | Should -Be ([datetime]'2026-09-10')
+        $s[0].Lines | Should -Be @('09:00  First', '10:00  Second')
+        $s[0].Hits.Count | Should -Be 0
+    }
+
+    It 'keeps only the days a query matches, case-insensitively and literally' {
+        New-Item -ItemType Directory -Path $nroot | Out-Null
+        Set-Content -LiteralPath (Join-Path $nroot '2026-09-10.md') -Encoding utf8 -Value "# 2026-09-10`n`n- **09:00** — Coffee with Karen`n- **10:00** — Wrote some c++"
+        Set-Content -LiteralPath (Join-Path $nroot '2026-09-11.md') -Encoding utf8 -Value "# 2026-09-11`n`n- **09:00** — Nothing relevant"
+        $files = Get-NoteFile -Root $nroot
+        $s = @(Get-NoteSummary -File $files -Query 'KAREN')
+        $s.Count   | Should -Be 1
+        $s[0].Hits | Should -Be @('09:00  Coffee with Karen')
+        # Regex metacharacters must not throw or change the meaning.
+        @(Get-NoteSummary -File $files -Query 'c++').Count | Should -Be 1
+    }
+
+    It 'skips a file whose name is not a real date' {
+        New-Item -ItemType Directory -Path $nroot | Out-Null
+        Set-Content -LiteralPath (Join-Path $nroot '2026-13-45.md') -Value 'x'
+        @(Get-NoteSummary -File (Get-NoteFile -Root $nroot)).Count | Should -Be 0
+    }
+
+    It 'appends a timestamped bullet under a daily header' {
+        note Met with Karen 6>$null
+        note Second thing 6>$null
+        $content = Get-Content -LiteralPath $todayFile
+        $content[0] | Should -Be "# $(Get-Date -Format 'yyyy-MM-dd')"
+        $bullets = @($content | Where-Object { $_ -like '- *' })
+        $bullets.Count | Should -Be 2
+        $bullets[0]    | Should -Match '^- \*\*\d{2}:\d{2}\*\* — Met with Karen$'
+    }
+
+    It 'never creates the folder or file just to read today' {
+        # The old no-args path created the note before opening it, which left a
+        # header-only file behind for every day you merely looked.
+        note 6>$null
+        Test-Path -LiteralPath $nroot | Should -BeFalse
+    }
+
+    It 'prints today in the terminal instead of launching an app' {
+        Mock Invoke-Item { }
+        note Met with Karen 6>$null
+        $out = Get-PickerPlainText ((today 6>&1 | ForEach-Object { "$_" }) -join "`n")
+        $out | Should -Match (Get-Date).ToString('dddd', [cultureinfo]::InvariantCulture)
+        $out | Should -Match 'Met with Karen'
+        $out | Should -Not -Match '# \d{4}-\d{2}-\d{2}'
+        Should -Invoke Invoke-Item -Times 0 -Exactly
+    }
+
+    It 'opens the app only with -Edit, appending first when given text' {
+        Mock Invoke-Item { }
+        note -Edit Fix this later 6>$null
+        Should -Invoke Invoke-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $todayFile }
+        (Get-Content -LiteralPath $todayFile)[-1] | Should -Match '^- \*\*\d{2}:\d{2}\*\* — Fix this later$'
+    }
+
+    It 'notes offers the matching days and prints the one picked' {
+        New-Item -ItemType Directory -Path $nroot | Out-Null
+        Set-Content -LiteralPath (Join-Path $nroot '2026-09-10.md') -Encoding utf8 -Value "# 2026-09-10`n`n- **09:00** — Coffee with Karen`n- **11:00** — Karen again"
+        Set-Content -LiteralPath (Join-Path $nroot '2026-09-11.md') -Encoding utf8 -Value "# 2026-09-11`n`n- **09:00** — Nothing relevant"
+        Mock Show-Picker {
+            $script:pickerRow    = Get-PickerPlainText (& $RenderRow $Items[0] 80)
+            $script:pickerDetail = & $DetailRow $Items[0]
+            $script:pickerCount  = $Items.Count
+            $Items[0]
+        }
+        Mock Show-NoteFile { }
+        notes karen
+        $pickerCount  | Should -Be 1
+        $pickerRow    | Should -Match '^2026-09-10  Thu  2 hits'
+        $pickerDetail | Should -Be '09:00  Coffee with Karen  ·  11:00  Karen again'
+        Should -Invoke Show-NoteFile -Times 1 -Exactly -ParameterFilter { $Path -like '*2026-09-10.md' }
+    }
+
+    It 'notes says so instead of opening an empty picker' {
+        Mock Show-Picker { }
+        notes 6>$null
+        New-Item -ItemType Directory -Path $nroot | Out-Null
+        Set-Content -LiteralPath (Join-Path $nroot '2026-09-10.md') -Value '# 2026-09-10'
+        notes nothing-matches 6>$null
+        Should -Invoke Show-Picker -Times 0 -Exactly
+    }
+}
+
+Describe 'j built-in destinations (Get-JumpStarter)' {
+
+    BeforeEach {
+        $script:savedJumpFolders = $script:JumpFolders
+        $script:JumpFolders = @(Get-JumpStarter)
+    }
+    AfterEach { $script:JumpFolders = $script:savedJumpFolders }
+
+    It 'lists only folders that exist, under unique one-word labels' {
+        foreach ($f in $script:JumpFolders) {
+            Test-Path -LiteralPath $f.Path -PathType Container | Should -BeTrue -Because "$($f.Label) -> $($f.Path)"
+            # A space or parenthesis would split `j <label>` into more than one argument.
+            $f.Label | Should -Not -Match '[\s()]'
+        }
+        $labels = @($script:JumpFolders.Label)
+        @($labels | Select-Object -Unique).Count | Should -Be $labels.Count
+    }
+
+    It 'keeps the original starters first, so a direct jump still lands where it used to' {
+        # First match on label OR path decides `j <text>`. ProgramData must beat
+        # Program Files for `prog`, and LocalAppData must beat Roaming, whose
+        # path (...\AppData\Roaming) also contains "appdata".
+        Mock Invoke-JumpTo { }
+        j prog
+        Should -Invoke Invoke-JumpTo -Times 1 -Exactly -ParameterFilter { $Path -eq $env:ProgramData }
+        j appdata
+        Should -Invoke Invoke-JumpTo -Times 1 -Exactly -ParameterFilter { $Path -eq $env:LOCALAPPDATA }
+        j temp
+        $longTemp = [IO.DirectoryInfo]::new($env:TEMP).FullName
+        Should -Invoke Invoke-JumpTo -Times 1 -Exactly -ParameterFilter { $Path -eq $longTemp }
+        j x86
+        Should -Invoke Invoke-JumpTo -Times 1 -Exactly -ParameterFilter { $Path -eq ${env:ProgramFiles(x86)} }
+    }
+
+    It 'drops a starter whose folder is missing or whose variable is unset' {
+        $savedPublic = $env:PUBLIC
+        $savedX86    = ${env:ProgramFiles(x86)}
+        try {
+            $env:PUBLIC = Join-Path ([IO.Path]::GetTempPath()) ("no-such-public-" + [Guid]::NewGuid().ToString('N'))
+            ${env:ProgramFiles(x86)} = $null      # as on 32-bit Windows
+            $labels = @(Get-JumpStarter).Label
+            $labels | Should -Not -Contain 'PublicDesktop'
+            $labels | Should -Not -Contain 'ProgramFilesX86'
+            $labels | Should -Contain 'Home'
+        } finally {
+            $env:PUBLIC = $savedPublic
+            ${env:ProgramFiles(x86)} = $savedX86
+        }
+    }
+
+    It 'shows the long form of an 8.3 path such as a short %TEMP%' {
+        $savedTemp = $env:TEMP
+        try {
+            # Build an 8.3 alias for the real temp folder when the volume has
+            # short names; skip quietly where 8.3 generation is disabled.
+            $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($savedTemp).ShortPath
+            if ($short -eq [IO.DirectoryInfo]::new($savedTemp).FullName) { Set-ItResult -Skipped -Because 'no 8.3 names on this volume'; return }
+            $env:TEMP = $short
+            (@(Get-JumpStarter) | Where-Object Label -EQ 'Temp').Path | Should -Not -Match '~'
+        } finally { $env:TEMP = $savedTemp }
+    }
+
+    It 'points ProgramFiles at the 64-bit folder even when the process sees (x86)' {
+        # A 32-bit shell on 64-bit Windows gets ProgramFiles = the (x86) folder;
+        # ProgramW6432 is the one that stays put.
+        $savedPF = $env:ProgramFiles
+        try {
+            $env:ProgramFiles = ${env:ProgramFiles(x86)}
+            (@(Get-JumpStarter) | Where-Object Label -EQ 'ProgramFiles').Path | Should -Be $env:ProgramW6432
+        } finally { $env:ProgramFiles = $savedPF }
     }
 }
 

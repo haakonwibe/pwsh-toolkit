@@ -49,7 +49,9 @@
 
     # ─── Folder jumper (j) ───────────────────────────────────────────────────
     # Extra destinations appended to the built-in starter list (Home, Downloads,
-    # OneDrive, LocalAppData, ProgramData).
+    # OneDrive, LocalAppData, ProgramData, Roaming, Temp, ProgramFiles,
+    # ProgramFilesX86, Windows, WinTemp, IMELogs, StartMenu, PublicDesktop —
+    # each shown only on machines where the folder exists).
     #
     # For a quick favorite you don't need this at all — run `j -Add` to bookmark
     # the current folder (or `j -Add <path> -Label <name>`); `j -Remove <label>`
@@ -71,7 +73,7 @@
     # that file is regular PowerShell, dot-sourced after this config is
     # applied, so it can extend $script:JumpFolders with arbitrary expressions:
     #
-    #     $script:JumpFolders += [pscustomobject]@{ Label = 'Temp'; Path = $env:TEMP }
+    #     $script:JumpFolders += [pscustomobject]@{ Label = 'Repos'; Path = "$env:USERPROFILE\source\repos" }
     ExtraJumpFolders = @(
         # @{ Label = 'GitHub'; Path = 'C:\GitHub' }
         # @{ Label = 'VMs';    Path = 'D:\VMs' }
@@ -111,10 +113,11 @@
         # 'D:\src'
     )
 
-    # ─── Notes / journal (note, today) ───────────────────────────────────────
+    # ─── Notes / journal (note, today, notes) ────────────────────────────────
     # Folder for the daily markdown journal. `note "text"` appends a
     # timestamped bullet to YYYY-MM-DD.md inside this folder; `today` (no-args)
-    # opens the file in your default .md app.
+    # prints the day in the terminal and `note -Edit` opens it in your default
+    # .md app. `notes` browses every YYYY-MM-DD.md in the folder.
     #
     # When $null, NotesRoot is auto-detected via cascade:
     #   1. Obsidian vault flagged "open" in obsidian.json — uses <vault>\Daily

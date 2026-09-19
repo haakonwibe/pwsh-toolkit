@@ -30,7 +30,7 @@
 # Plain literal paths belong in config.psd1's ExtraJumpFolders. Put anything
 # that needs PowerShell to evaluate here — env vars, conditional or generated
 # paths — because this file runs after the config is applied.
-# $script:JumpFolders += [pscustomobject]@{ Label = 'Temp'; Path = $env:TEMP }
+# $script:JumpFolders += [pscustomobject]@{ Label = 'Repos'; Path = "$env:USERPROFILE\source\repos" }
 #
 # Only add a mapped drive if it's actually present on this machine:
 # if (Test-Path 'Z:\') {

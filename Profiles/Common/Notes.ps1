@@ -1,9 +1,12 @@
 # Daily markdown journal
 # ============================================================================
 # `note "thing"`        - append a timestamped bullet to today's note file
-# `note`                - open today's note in the default app (Obsidian-friendly)
+# `note`                - print today's note in the terminal
+# `note -Edit`          - open today's note in the default .md app (Obsidian-friendly)
 # `today`               - alias for `note` — same call surface; semantically a
-#                         shortcut for "open today's notes"
+#                         shortcut for "show today's notes"
+# `notes [query]`       - picker over every daily note (or the days mentioning
+#                         query); Enter prints the chosen day
 # `Find-Note "query"`   - grep across all .md files in NotesRoot
 # `Set-NotesRoot`       - interactive picker over auto-detected candidates
 #                         (Obsidian vaults, OneDrive Documents, local Documents)
@@ -181,16 +184,130 @@ function Set-NotesRoot {
     Write-Host ''
 }
 
+function Get-NoteFile {
+    <#
+    .SYNOPSIS
+        The daily note files in NotesRoot, newest first.
+    .DESCRIPTION
+        Only YYYY-MM-DD.md names count: NotesRoot is usually an Obsidian vault's
+        Daily folder, which can hold other notes that aren't journal days.
+        Returns nothing when the folder doesn't exist.
+    #>
+    [OutputType([System.IO.FileInfo])]
+    param([string] $Root = $script:Config.NotesRoot)
+
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root)) { return }
+    Get-ChildItem -LiteralPath $Root -Filter '*.md' -File -ErrorAction Ignore |
+        Where-Object Name -Match '^\d{4}-\d{2}-\d{2}\.md$' |
+        Sort-Object Name -Descending
+}
+
+function ConvertTo-NotePlainLine {
+    <#
+    .SYNOPSIS
+        One note line as plain text for a picker row.
+    .DESCRIPTION
+        "- **09:13** — Met with Karen" -> "09:13  Met with Karen". Lines written
+        by hand in Obsidian go through the same path, so a bullet, a heading or
+        a stray **bold** reads as its text rather than its markup.
+    #>
+    [OutputType([string])]
+    param([string] $Line)
+
+    $t = $Line.Trim() -replace '^(#+|[-*+])\s+', ''
+    $t = $t -replace '^\*\*(\d{1,2}:\d{2})\*\*\s*[—–-]\s*', '$1  '
+    $t -replace '\*\*', ''
+}
+
+function Get-NoteSummary {
+    <#
+    .SYNOPSIS
+        One picker item per daily note: its date, its lines, and query hits.
+    .DESCRIPTION
+        Lines are the note's content as plain text, with the "# YYYY-MM-DD"
+        header and blank lines dropped. With -Query, only the notes containing
+        it are returned (case-insensitive, matched literally so `c++` or `(x)`
+        need no escaping) and Hits holds the matching lines; without it Hits is
+        empty. A file whose name isn't a real date (2026-13-45.md) is skipped.
+    #>
+    param(
+        [System.IO.FileInfo[]] $File,
+        [string] $Query
+    )
+
+    foreach ($f in $File) {
+        $date = [datetime]::MinValue
+        if (-not [datetime]::TryParseExact($f.BaseName, 'yyyy-MM-dd', [cultureinfo]::InvariantCulture,
+                [System.Globalization.DateTimeStyles]::None, [ref] $date)) { continue }
+
+        $lines = @(Get-Content -LiteralPath $f.FullName -Encoding utf8 -ErrorAction Ignore |
+            Where-Object { $_.Trim() -and $_ -notmatch '^#\s+\d{4}-\d{2}-\d{2}\s*$' } |
+            ForEach-Object { ConvertTo-NotePlainLine $_ })
+
+        $hits = @()
+        if ($Query) {
+            $hits = @($lines | Where-Object { $_.IndexOf($Query, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+            if ($hits.Count -eq 0) { continue }
+        }
+
+        [pscustomobject]@{
+            Date  = $date
+            Path  = $f.FullName
+            Lines = $lines
+            Hits  = $hits
+        }
+    }
+}
+
+function Show-NoteFile {
+    <#
+    .SYNOPSIS
+        Print one daily note in the terminal.
+    .DESCRIPTION
+        A dated title with the weekday, then the note's markdown rendered by
+        Show-Markdown (built into PowerShell 7, so bold, code and headings come
+        out styled with nothing to install), indented like the rest of the
+        toolkit's output. The file's own "# YYYY-MM-DD" header is dropped in
+        favour of the title, which says the same thing plus the day.
+    #>
+    param([Parameter(Mandatory)][string] $Path)
+
+    $name  = [IO.Path]::GetFileNameWithoutExtension($Path)
+    $date  = [datetime]::MinValue
+    $title = if ([datetime]::TryParseExact($name, 'yyyy-MM-dd', [cultureinfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::None, [ref] $date)) {
+        $date.ToString('dddd d MMMM yyyy', [cultureinfo]::InvariantCulture)
+    } else { $name }
+
+    $body = [string](Get-Content -Raw -LiteralPath $Path -Encoding utf8) -replace '^#\s+\d{4}-\d{2}-\d{2}[ \t]*\r?\n', ''
+
+    Write-Host ''
+    Write-Host "  $title" -ForegroundColor Cyan
+    Write-Host ''
+    if (-not $body.Trim()) {
+        Write-Host '  (empty)' -ForegroundColor DarkGray
+    } else {
+        $rendered = ([string](Show-Markdown -InputObject $body.Trim())).TrimEnd() -split '\r?\n'
+        foreach ($l in $rendered) { Write-Host "  $l" }
+    }
+    Write-Host ''
+}
+
 function note {
     <#
     .SYNOPSIS
-        Append a timestamped bullet to today's note, or open today's note.
+        Append a timestamped bullet to today's note, or show today's note.
     .DESCRIPTION
         With text, appends "- **HH:mm** — <text>" to <NotesRoot>/YYYY-MM-DD.md
         (creating the file with a daily header on first write). With no text,
-        opens today's note in your default .md app. Aliased as `today`.
+        prints today's note in the terminal. -Edit opens it in your default .md
+        app instead, for when an entry needs fixing. Aliased as `today`.
+        `notes` browses earlier days; `Find-Note` searches them.
     .PARAMETER Text
         The note text. Everything after `note` is captured, so quotes are optional.
+    .PARAMETER Edit
+        Open today's note in your default .md app (Obsidian, Typora, VS Code, …)
+        rather than printing it. Given with text, appends first, then opens.
     .EXAMPLE
         note Met with Karen re: policy rollout
 
@@ -199,12 +316,16 @@ function note {
     .EXAMPLE
         today
 
-        With no text, opens today's note file in your default .md app (Obsidian,
-        Typora, VS Code, …) so you can read or edit the whole day's entries.
+        With no text, prints today's entries right in the terminal.
+    .EXAMPLE
+        note -Edit
+
+        Opens today's note in your default .md app to fix or rewrite an entry.
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Text
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Text,
+        [switch] $Edit
     )
 
     $notesRoot = $script:Config.NotesRoot
@@ -214,23 +335,45 @@ function note {
         return
     }
 
+    $today    = Get-Date -Format 'yyyy-MM-dd'
+    $notePath = Join-Path $notesRoot "$today.md"
+    $line     = ($Text -join ' ').Trim()
+
+    if (-not $line -and -not $Edit) {
+        # Reading never creates the file, so a day you only looked at stays
+        # empty on disk instead of leaving a header-only note behind.
+        if (Test-Path -LiteralPath $notePath) {
+            Show-NoteFile -Path $notePath
+            return
+        }
+        Write-Host '  No notes yet today.  note <text> starts one.' -ForegroundColor DarkGray
+        $last = Get-NoteFile -Root $notesRoot | Select-Object -First 1
+        if ($last) {
+            Write-Host "  Last note: $($last.BaseName)  —  notes to browse them." -ForegroundColor DarkGray
+        }
+        return
+    }
+
     if (-not (Test-Path -LiteralPath $notesRoot)) {
         New-Item -ItemType Directory -Path $notesRoot -Force | Out-Null
     }
 
-    $today    = Get-Date -Format 'yyyy-MM-dd'
-    $notePath = Join-Path $notesRoot "$today.md"
-
-    # Create the file with a daily header on first touch.
+    # Create the file with a daily header on first write.
     if (-not (Test-Path -LiteralPath $notePath)) {
         Set-Content -LiteralPath $notePath -Value "# $today`n`n" -Encoding utf8
     }
 
-    if (-not $Text -or $Text.Count -eq 0) {
-        # No-args: open today's note in whatever app handles .md.
-        # On a typical Obsidian setup with .md → Obsidian, this jumps right
-        # into the vault. Falls back to Typora / VS Code / Notepad via the
-        # Windows shell association.
+    if ($line) {
+        $timestamp = Get-Date -Format 'HH:mm'
+        Add-Content -LiteralPath $notePath -Value "- **$timestamp** — $line" -Encoding utf8
+        Write-Host "  + $today.md  ($timestamp)" -ForegroundColor DarkGray
+    }
+
+    if ($Edit) {
+        # Whatever app handles .md: on an Obsidian setup that jumps right into
+        # the vault; otherwise Typora / VS Code / Notepad via the shell
+        # association. If Windows asks which app to use, that's the association
+        # being unset — pick one and tick "Always" once.
         #
         # NOTE: v0.1.19-21 chased a "Chromium stderr leaks into the parent
         # shell" issue with some Electron handlers (Typora was the reported
@@ -242,16 +385,76 @@ function note {
         # Invoke-Item in v0.1.22 — keep this simple. Don't re-add workarounds
         # unless someone reports an actually-broken behavior, not just noise.
         Invoke-Item -LiteralPath $notePath
-        return
     }
-
-    $line      = $Text -join ' '
-    $timestamp = Get-Date -Format 'HH:mm'
-    Add-Content -LiteralPath $notePath -Value "- **$timestamp** — $line" -Encoding utf8
-    Write-Host "  + $today.md  ($timestamp)" -ForegroundColor DarkGray
 }
 
 Set-Alias today note
+
+function notes {
+    <#
+    .SYNOPSIS
+        Browse your daily notes in a picker; Enter prints the chosen day.
+    .DESCRIPTION
+        Lists every daily note in NotesRoot, newest first, with its entry count
+        and first entry; the highlighted day's entries show in full beneath the
+        list. Enter prints that day in the terminal, the same way `today` does.
+        With a query, only the days that mention it are listed and the detail
+        shows the matching lines — the browse-and-read counterpart to
+        Find-Note, which prints every hit as a table.
+    .PARAMETER Query
+        Only list the days containing this text (case-insensitive, matched
+        literally). Everything after `notes` is captured, so quotes are optional.
+    .EXAMPLE
+        notes
+
+        Every day you've written a note, newest first. The digit and letter keys
+        jump straight to a day, so yesterday is usually one keypress away.
+    .EXAMPLE
+        notes karen
+
+        Only the days that mention Karen; the matching lines show beneath the
+        list for whichever day is highlighted.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Query)
+
+    $notesRoot = $script:Config.NotesRoot
+    $files = @(Get-NoteFile -Root $notesRoot)
+    if ($files.Count -eq 0) {
+        Write-Host "  No daily notes in '$notesRoot' yet.  note <text> starts one." -ForegroundColor Yellow
+        return
+    }
+
+    $q     = ($Query -join ' ').Trim()
+    $items = @(Get-NoteSummary -File $files -Query $q)
+    if ($items.Count -eq 0) {
+        Write-Host "  No notes mention '$q'." -ForegroundColor Yellow
+        return
+    }
+
+    $render = {
+        param($i)
+        # With a query the count and preview are about the hits, since those
+        # are why the day is on the list at all.
+        $shown = if ($q) { $i.Hits } else { $i.Lines }
+        $noun  = if ($q) { 'hit' } else { 'entry' }
+        $count = if ($shown.Count -eq 1) { "1 $noun" } elseif ($q) { "$($shown.Count) hits" } else { "$($shown.Count) entries" }
+        $day   = $i.Date.ToString('ddd', [cultureinfo]::InvariantCulture)
+        "{0:yyyy-MM-dd}  `e[90m{1}`e[0m  {2,-11}  `e[90m{3}`e[0m" -f $i.Date, $day, $count, ($shown | Select-Object -First 1)
+    }.GetNewClosure()
+
+    $detail = {
+        param($i)
+        $(if ($q) { $i.Hits } else { $i.Lines }) -join '  ·  '
+    }.GetNewClosure()
+
+    $title = if ($q) { "Daily notes mentioning '$q'" } else { 'Daily notes' }
+    $selected = Show-Picker -Items $items -RenderRow $render -DetailRow $detail `
+        -Title $title -Hint 'Up/Down + Enter show  PgUp/PgDn  Esc cancel  |  1-9, a-z jump'
+    if (-not $selected) { return }
+
+    Show-NoteFile -Path $selected.Path
+}
 
 # Resolve NotesRoot if unset at this point. Runs once at Notes.ps1 load time
 # (after the loader's hard-fallback block, which leaves NotesRoot as $null
@@ -266,7 +469,8 @@ function Find-Note {
         Search across all daily notes for a term.
     .DESCRIPTION
         Greps the markdown files in NotesRoot, returning the note file, line
-        number, and matching line for each hit.
+        number, and matching line for each hit. To read one of those days in
+        full, `notes <query>` lists the same days in a picker.
     .PARAMETER Query
         The text or pattern to search for.
     .EXAMPLE

@@ -44,7 +44,7 @@ BeforeAll {
     'rdp','rps',
     'task',
     'wtf',
-    'note','today','Find-Note','Set-NotesRoot',
+    'note','today','notes','Find-Note','Set-NotesRoot',
     'ask','ll','la','lh','touch','which',
     'apps','uninst','Get-InstalledApp','Uninstall-App'
 )
@@ -315,7 +315,9 @@ Describe 'Custom prompt function' {
 
 Describe 'Folder jumper' {
     It 'has at least the built-in starter destinations' {
-        # Home, Downloads, OneDrive, LocalAppData, ProgramData = 5
+        # Starters whose folder is missing are dropped (OneDrive on a CI runner,
+        # IMELogs off an enrolled device), but Home, LocalAppData, ProgramData,
+        # Temp and Windows exist on any Windows machine.
         $script:CustomProbe.JumpFolderCount | Should -BeGreaterOrEqual 5
     }
 }

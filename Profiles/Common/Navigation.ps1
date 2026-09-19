@@ -130,13 +130,50 @@ function ... {
 #      run — bookmarks always sit at the END of the list, so first-match lookup
 #      (`j <text>`) can never be shadowed-FROM by a bookmark, only shadowed-TO.
 
-$script:JumpFolders = @(
-    [pscustomobject]@{ Label = 'Home';         Path = $env:USERPROFILE }
-    [pscustomobject]@{ Label = 'Downloads';    Path = "$env:USERPROFILE\Downloads" }
-    [pscustomobject]@{ Label = 'OneDrive';     Path = $script:OneDrivePath }
-    [pscustomobject]@{ Label = 'LocalAppData'; Path = $env:LOCALAPPDATA }
-    [pscustomobject]@{ Label = 'ProgramData';  Path = $env:ProgramData }
-)
+function Get-JumpStarter {
+    # The built-in destinations, minus any whose folder doesn't exist on this
+    # machine: (x86) on 32-bit Windows, the Intune logs on a device that isn't
+    # enrolled, OneDrive where it was never set up. A row that can only answer
+    # "Path does not exist" is noise in the picker.
+    #
+    # Order is load-bearing, because `j <text>` takes the first match on label
+    # OR path. The original five stay first so existing muscle memory holds —
+    # `j prog` must keep reaching ProgramData (not Program Files) and
+    # `j appdata` LocalAppData (not Roaming, whose path also contains it).
+    # Labels avoid spaces and parentheses so they type as one bare argument.
+    #
+    # ProgramW6432 is the 64-bit folder even from a 32-bit shell, where
+    # $env:ProgramFiles would quietly point at (x86); it's unset on 32-bit
+    # Windows, where ProgramFiles is the only one there is.
+    $starters = @(
+        [pscustomobject]@{ Label = 'Home';            Path = $env:USERPROFILE }
+        [pscustomobject]@{ Label = 'Downloads';       Path = "$env:USERPROFILE\Downloads" }
+        [pscustomobject]@{ Label = 'OneDrive';        Path = $script:OneDrivePath }
+        [pscustomobject]@{ Label = 'LocalAppData';    Path = $env:LOCALAPPDATA }
+        [pscustomobject]@{ Label = 'ProgramData';     Path = $env:ProgramData }
+        [pscustomobject]@{ Label = 'Roaming';         Path = $env:APPDATA }
+        [pscustomobject]@{ Label = 'Temp';            Path = $env:TEMP }
+        [pscustomobject]@{ Label = 'ProgramFiles';    Path = $env:ProgramW6432 ?? $env:ProgramFiles }
+        [pscustomobject]@{ Label = 'ProgramFilesX86'; Path = ${env:ProgramFiles(x86)} }
+        [pscustomobject]@{ Label = 'Windows';         Path = $env:SystemRoot }
+        [pscustomobject]@{ Label = 'WinTemp';         Path = "$env:SystemRoot\Temp" }
+        # Admin / Intune troubleshooting: where SYSTEM-context installs log,
+        # and where a deployed app's shortcuts should have landed.
+        [pscustomobject]@{ Label = 'IMELogs';         Path = "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs" }
+        [pscustomobject]@{ Label = 'StartMenu';       Path = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" }
+        [pscustomobject]@{ Label = 'PublicDesktop';   Path = "$env:PUBLIC\Desktop" }
+    )
+    # Directory.Exists over Test-Path: this runs on every shell start and skips
+    # the provider layer. FullName expands 8.3 names (%TEMP% is often
+    # C:\Users\JOHNSM~1\...), which Resolve-Path would carry into the prompt.
+    foreach ($s in $starters) {
+        if ($s.Path -and [IO.Directory]::Exists($s.Path)) {
+            [pscustomobject]@{ Label = $s.Label; Path = [IO.DirectoryInfo]::new($s.Path).FullName }
+        }
+    }
+}
+
+$script:JumpFolders = @(Get-JumpStarter)
 
 # Append user-defined destinations from config.psd1's ExtraJumpFolders array.
 # Each entry is a hashtable with Label and Path keys.
