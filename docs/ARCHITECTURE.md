@@ -206,10 +206,23 @@ Tests pin the rule in both directions: no `::Insert(`/`::Replace(` anywhere in t
 
 Handlers must also stay quiet. The prompt line is still on screen while one runs, so anything written over it leaves artifacts — `Get-HowCommand -Quiet` exists for exactly this.
 
+---
+
+### 16. `PwshUpdate/` is the one SYSTEM-context component, and it plays by different rules
+
+`PwshUpdate/Invoke-PwshUpdate.ps1` keeps a systemwide PowerShell 7 current from the ZIP packages, driven by `pwshup` in `Common/PwshUpdate.ps1`. It is the only code in the repo that runs as SYSTEM, and the only standalone script besides `install.ps1` that must run under Windows PowerShell 5.1. The five rules below follow from that:
+
+- **5.1, ASCII-only.** It must never depend on the pwsh it replaces, and it must be able to repair a broken install. Tests parse it under `powershell.exe`, run its harness under both hosts, and fail on any byte over 127.
+- **The SYSTEM task runs the installed copy only** (`C:\Program Files\PowerShell\pwshup\updater\`, writable by admins only), never the repo. The script refuses to run as SYSTEM from anywhere else, and a test pins the task's `-File` to the installed copy. `pwshup -Update`/`-Rollback` also run the installed copy, so what runs elevated is what the task runs.
+- **Link-safe removal only.** 5.1's `Remove-Item -Recurse` follows junctions, so deleting through `7`, or a planted link, could take out `C:\Program Files\PowerShell\Modules`. All removal goes through `Remove-PwshLink`/`Remove-PwshTree`, which never enter a reparse point. A test forbids `Remove-Item -Recurse` on the file system, and the harness plants such a link to prove it.
+- **Switch the junction only while nothing runs from it.** pwsh doesn't resolve the junction: `$PSHOME` and every assembly path stay `...\7\...` (measured). A session left open across a switch would load its remaining assemblies from the new version. Updates stage fully and verify first; the switch itself is deferred until no pwsh runs from `7`, unless `-Force` is given.
+- **All mutable state lives under the admin-only install root:** staging, logs, the state file and the lock. `C:\ProgramData` and `%TEMP%` let ordinary users create folders first, and a folder a user created first is a way to redirect SYSTEM's writes.
+
 ## What NOT to do
 
 - **Don't auto-publish to PSGallery.** Module split + publishing is v2.
 - **Don't refactor the helpers themselves** unless there's a clear bug. The implementations of `j`, `peek`, `df`, `winup`, etc. have been ironed out over many iterations — preserve their behavior. Focus refactor energy on the loader/config layer.
+- **Don't point the PwshUpdate task at the repo, or "simplify" its deletes to `Remove-Item -Recurse`.** Both are privilege or data-loss bugs that look like cleanups — see #16.
 - **Don't add cross-platform support unprompted.** Many helpers are Windows-specific. Documenting "Windows-only for now" is fine.
 - **Don't add a config knob without updating `config.example.psd1` and the loader's hard-fallback defaults.** Keys missing from both files entirely hit the loader's `if (-not $script:Config.ContainsKey(...)) { ... }` block; only add to that block if the key is critical for the loader itself to function.
 - **Don't bypass the symlink-aware `$PSCommandPath` resolution** in `pwsh-toolkit-profile.ps1`. Specifically, don't rewrite `(Get-Item $PSCommandPath).Target ?? $PSCommandPath` as plain `$PSCommandPath` — it breaks the symlink case while looking like a simplification.

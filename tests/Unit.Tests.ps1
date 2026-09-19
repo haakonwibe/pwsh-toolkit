@@ -39,6 +39,7 @@ BeforeAll {
     . (Join-Path $commonDir 'RemoteServers.ps1')  # Format-RemoteServerDisplay, Get-RemoteServerByMatch
     . (Join-Path $commonDir 'Picker.ps1')         # Get-PickerScrollTop
     . (Join-Path $commonDir 'Notes.ps1')          # note, notes, Get-NoteSummary (NotesRoot preset above, so no cascade)
+    . (Join-Path $commonDir 'PwshUpdate.ps1')     # pwshup, Get-PwshUpdateWarning, Get-PwshupInvocation
     . (Join-Path $commonDir 'Projects.ps1')       # Find-GitProject, Get-ProjectRoot
     . (Join-Path $commonDir 'SystemUtilities.ps1') # Test-NativeSudoEnabled
     . (Join-Path $commonDir 'PoshThemes.ps1')      # Get-PoshThemePool
@@ -802,6 +803,69 @@ Describe 'Daily notes (note / notes)' {
         Set-Content -LiteralPath (Join-Path $nroot '2026-09-10.md') -Value '# 2026-09-10'
         notes nothing-matches 6>$null
         Should -Invoke Show-Picker -Times 0 -Exactly
+    }
+}
+
+Describe 'pwshup (profile side)' {
+
+    It 'stays quiet while the updater is healthy' {
+        $now = Get-Date
+        Get-PwshUpdateWarning -State ([pscustomobject]@{ LastSuccess = $now.AddDays(-1).ToUniversalTime().ToString('o'); Staged = $null; StagedAt = $null }) -Now $now |
+            Should -BeNullOrEmpty
+    }
+
+    It 'warns when no check has succeeded for a week' {
+        $now = Get-Date
+        Get-PwshUpdateWarning -State ([pscustomobject]@{ LastSuccess = $now.AddDays(-9).ToUniversalTime().ToString('o'); Staged = $null; StagedAt = $null }) -Now $now |
+            Should -BeLike "*hasn't completed a check in 9 days*"
+    }
+
+    It 'warns when an update has waited a week for pwsh windows to close' {
+        $now = Get-Date
+        $state = [pscustomobject]@{ LastSuccess = $now.ToUniversalTime().ToString('o'); Staged = '7.7.1'; StagedAt = $now.AddDays(-8).ToUniversalTime().ToString('o') }
+        Get-PwshUpdateWarning -State $state -Now $now | Should -BeLike '*7.7.1 has waited 8 days*-Force*'
+    }
+
+    It 'reads the DateTime values PowerShell 7 ConvertFrom-Json produces' {
+        # The updater writes ISO strings under 5.1; pwsh parses them back into
+        # DateTime. Both shapes must work.
+        $now = Get-Date
+        $state = '{"LastSuccess":"' + $now.AddDays(-10).ToUniversalTime().ToString('o') + '","Staged":null,"StagedAt":null}' | ConvertFrom-Json
+        $state.LastSuccess | Should -BeOfType [datetime]
+        Get-PwshUpdateWarning -State $state -Now $now | Should -BeLike '*10 days*'
+    }
+
+    It 'says nothing for a fresh install with no stamps yet' {
+        Get-PwshUpdateWarning -State ([pscustomobject]@{ LastSuccess = $null; Staged = $null; StagedAt = $null }) | Should -BeNullOrEmpty
+    }
+
+    Context 'Get-PwshupInvocation' {
+        BeforeAll {
+            $script:pwRoot = Join-Path ([IO.Path]::GetTempPath()) ('pwshup-ut-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+            $script:pwRepo = Join-Path $script:pwRoot 'repo.ps1'
+            $null = New-Item -ItemType Directory -Path (Join-Path $script:pwRoot 'pwshup\updater')
+            Set-Content -LiteralPath $script:pwRepo -Value '# repo'
+            $script:pwInstalled = Join-Path $script:pwRoot 'pwshup\updater\Invoke-PwshUpdate.ps1'
+        }
+        AfterAll { Remove-Item -LiteralPath $script:pwRoot -Recurse -Force -ErrorAction SilentlyContinue }
+
+        It 'runs the repo script for -Install, passing its options through' {
+            $a = Get-PwshupInvocation -Mode Install -Parameters @{ Install = $true; Version = '7.6.5'; HealthcheckUrl = 'https://hc.example/x' } -RepoScript $script:pwRepo -Root $script:pwRoot
+            $a[0..4] | Should -Be @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:pwRepo)
+            ($a -join ' ') | Should -BeLike "*-Install -InstallRoot $($script:pwRoot) -Version 7.6.5 -HealthcheckUrl https://hc.example/x"
+        }
+
+        It 'refuses -Update until there is an installed copy to run' {
+            Get-PwshupInvocation -Mode Update -Parameters @{ Update = $true } -RepoScript $script:pwRepo -Root $script:pwRoot 6>$null | Should -BeNullOrEmpty
+        }
+
+        It 'runs the installed copy (what the SYSTEM task runs) for -Update, never the repo' {
+            Set-Content -LiteralPath $script:pwInstalled -Value '# installed'
+            $a = Get-PwshupInvocation -Mode Update -Parameters @{ Update = $true; Force = [switch]$true; AllowMajor = [switch]$true } -RepoScript $script:pwRepo -Root $script:pwRoot
+            $a[4] | Should -Be $script:pwInstalled
+            $a | Should -Contain '-Force'
+            $a | Should -Contain '-AllowMajor'
+        }
     }
 }
 

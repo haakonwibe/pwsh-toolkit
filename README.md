@@ -2,14 +2,14 @@
 
 <p align="center">
   <a href="https://haakonwibe.github.io/pwsh-toolkit/poster.html">
-    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 68 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
+    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 69 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
   </a>
 </p>
 <p align="center">
   <a href="https://haakonwibe.github.io/pwsh-toolkit/poster.html"><strong>📊 View the interactive poster →</strong></a>
 </p>
 
-A modular PowerShell profile system + toolkit for Windows. Folder jumper, archive previewer, disk-free overview, interactive winget upgrade picker, AI-tagged Downloads viewer, and a rotating tip system — all wired up through one config-driven loader.
+A modular PowerShell profile system + toolkit for Windows. Folder jumper, archive previewer, disk-free overview, interactive winget upgrade picker, AI-tagged Downloads viewer, a systemwide PowerShell 7 that keeps itself current, and a rotating tip system — all wired up through one config-driven loader.
 
 This is a **personal-but-public** setup. It's what I actually run on my own machines; the install script is for anyone who finds something here useful. Not a generic framework, not aiming to be Oh My Posh-scale.
 
@@ -65,6 +65,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 | **`peek <archive>`** | Extracts an archive to `$env:TEMP\peek\<name>-<timestamp>` and jumps you there. Dispatches to WinRAR for `.rar`, 7-Zip for everything else, `Expand-Archive` for `.zip` if neither is installed. `peek -List`, `peek -Active`, `peek -Clean` for the obvious variants. |
 | **`df`** | Disk-free overview with colored usage bars (green ≤70%, yellow 71-89%, red ≥90%). Fixed drives by default; `df -All` includes removable, network, and CD-ROM. |
 | **`winup`** | Interactive winget upgrade picker. Space to toggle, A toggles all, P pins (anchors) the highlighted package so it's never offered again, Enter to confirm. `winup -All` skips the picker. `winup -Pin <name>` anchors from the command line — backed by winget's native pin store, so plain `winget upgrade --all` skips it too; `-Version '10.1.26100.*'` gates to a branch instead of hiding (fixes within the branch keep coming), `-Unpin`/`-Pins` manage them. `winup -Elevated` runs it elevated (via gsudo / Windows' built-in `sudo`, else a new elevated window) so you approve one UAC prompt instead of one per package. Upgrading PowerShell itself would otherwise kill the run mid-batch, so it's handed to a detached process last and the rest of the batch always completes. Logs to `C:\ProgramData\WingetUpgrade\Logs\` in CMTrace XML format. |
+| **`pwshup`** | A systemwide PowerShell 7 that keeps itself current. There's no MSI from 7.7 on, and the Store build (what winget now installs) is per-user only, so this uses the official ZIP. `C:\Program Files\PowerShell\7` is a junction to a versioned folder, and a SYSTEM task checks nightly for the latest Stable release. A release is verified before `7` moves: SHA-256, Authenticode on every binary, and a smoke run. The switch waits until no pwsh is running from it, carries machine settings (LocalMachine execution policy, all-users profiles) across, and switches back if the new version fails its check. `pwshup` shows status; `-Install`, `-Update`, `-Rollback` and `-Uninstall` elevate. New major versions need `-AllowMajor`. Details in [`PwshUpdate/README.md`](PwshUpdate/README.md). |
 | **`tagdl`** | Scans `~\Downloads`, calls Claude Haiku with a structured-output schema, writes a description to each file's NTFS Alternate Data Stream `:description` + a portable `_downloads-index.csv`. Costs ~$0.001 per file. Caches results. |
 | **`sortdl`** | The hands to `tagdl`'s brain: reads `_downloads-index.csv` and files each tagged download at the Downloads root into a `~\Downloads\<Bucket>\` subfolder — nothing ever leaves Downloads. `Other` and untagged files stay at the root (a visible pile, not a junk drawer). Prints the move plan and asks before moving (defaults to No); `-WhatIf` previews only, `-Yes` skips the prompt for scheduled runs. Never overwrites (same-named files are reported as collisions and left in place). Every run is recorded, and `sortdl -Undo` reverses the last sort and removes the folders it emptied. |
 | **`dird` / `fr`** | Directory listings with the AI descriptions from `tagdl`, color-coded by extension and bucket. `dird` is alphabetical; `fr` is newest-first ("filelisting reverse" — BBS-style paging). |
@@ -199,7 +200,7 @@ For more complex per-machine logic (registering network drives, machine-specific
 ## Requirements
 
 - **Windows 10/11**
-- **PowerShell 7+** (`winget install Microsoft.PowerShell`)
+- **PowerShell 7+**. `winget install Microsoft.PowerShell` now installs the per-user Store build. For a systemwide install that keeps itself current, run `powershell -ExecutionPolicy Bypass -File .\PwshUpdate\Invoke-PwshUpdate.ps1 -Install` from an elevated Windows PowerShell. It needs no PowerShell 7 to start from; see [`PwshUpdate/README.md`](PwshUpdate/README.md).
 - An **execution policy** that allows local scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 The installer checks PowerShell version and stops with a clear message if you're on 5.1.
