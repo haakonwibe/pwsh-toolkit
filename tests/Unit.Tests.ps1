@@ -806,6 +806,86 @@ Describe 'Daily notes (note / notes)' {
     }
 }
 
+Describe 'Profile load speed' {
+
+    It 'does no expensive probing at load time' {
+        # A Get-Module -ListAvailable scan, a first ConvertFrom-Json or an eager
+        # Import-Module costs tens to hundreds of ms in every shell. Inside a
+        # function or scriptblock they run on demand, which is fine; at the top
+        # level of the loader or a Common/M365 file they run on every start.
+        $profiles = Join-Path (Split-Path $PSScriptRoot -Parent) 'Profiles'
+        $files = @(Join-Path $profiles 'pwsh-toolkit-profile.ps1') +
+                 @(Get-ChildItem (Join-Path $profiles 'Common/*.ps1'), (Join-Path $profiles 'M365/*.ps1') | ForEach-Object { $_.FullName })
+        $hits = foreach ($f in $files) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$null, [ref]$null)
+            foreach ($c in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+                $name = $c.GetCommandName()
+                $args_ = @($c.CommandElements | ForEach-Object { $_.Extent.Text })
+                $expensive = ($name -eq 'Get-Module' -and $args_ -contains '-ListAvailable') -or
+                             $name -in 'ConvertFrom-Json', 'Import-Module' -or
+                             ($name -eq 'Get-Command' -and (Split-Path -Leaf $f) -eq 'pwsh-toolkit-profile.ps1' -and $args_ -notcontains 'oh-my-posh')
+                if (-not $expensive) { continue }
+                $deferred = $false
+                for ($p = $c.Parent; $p; $p = $p.Parent) {
+                    if ($p -is [System.Management.Automation.Language.FunctionDefinitionAst] -or
+                        $p -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) { $deferred = $true; break }
+                }
+                if (-not $deferred) { '{0}:{1}  {2}' -f (Split-Path -Leaf $f), $c.Extent.StartLineNumber, $c.Extent.Text }
+            }
+        }
+        $hits | Should -BeNullOrEmpty
+    }
+
+    It 'summarises timed runs as per-step medians, largest first' {
+        $runs = @(
+            , @([pscustomobject]@{ Name = 'config'; Ms = 10 }, [pscustomobject]@{ Name = 'A'; Ms = 5 })
+            , @([pscustomobject]@{ Name = 'config'; Ms = 20 }, [pscustomobject]@{ Name = 'A'; Ms = 7 }, [pscustomobject]@{ Name = 'B'; Ms = 1 })
+            , @([pscustomobject]@{ Name = 'config'; Ms = 30 }, [pscustomobject]@{ Name = 'A'; Ms = 6 })
+        )
+        $rows = @(ConvertTo-ProfileLoadSummary -Run $runs)
+        $rows.Name | Should -Be @('config', 'A', 'B')
+        $rows[0].MedianMs | Should -Be 20
+        $rows[1].MedianMs | Should -Be 6
+        $rows[2].MedianMs | Should -Be 0          # missing from two runs of three
+        $rows[0].Share    | Should -Be ([math]::Round(20 / 28, 3))   # run totals 15, 28, 36
+    }
+
+    It 'reads the updater state with System.Text.Json, as 5.1 writes it' {
+        $json = "{`r`n    ""Current"":  ""7.6.6"",`r`n    ""Staged"":  null,`r`n    ""StagedAt"":  null,`r`n    ""LastSuccess"":  ""2026-09-19T09:24:21.5478342Z"",`r`n    ""Bad"":  [`r`n`r`n            ]`r`n}"
+        $s = Read-PwshUpdateState -Json $json
+        $s.LastSuccess | Should -Be '2026-09-19T09:24:21.5478342Z'
+        $s.Staged      | Should -BeNullOrEmpty
+        (Read-PwshUpdateState -Json '{"Staged": 7}').Staged | Should -BeNullOrEmpty   # not a string
+        (Read-PwshUpdateState -Json '{}').LastSuccess      | Should -BeNullOrEmpty
+        { Read-PwshUpdateState -Json '{ nope' } | Should -Throw
+    }
+
+    It 'resolves NotesRoot on first use and caches it' {
+        $saved = $script:Config.NotesRoot
+        try {
+            $script:Config.NotesRoot = $null
+            Mock Resolve-NotesRoot { 'X:\Vault\Daily' }
+            Get-NotesRoot | Should -Be 'X:\Vault\Daily'
+            Get-NotesRoot | Should -Be 'X:\Vault\Daily'
+            Should -Invoke Resolve-NotesRoot -Times 1 -Exactly
+        } finally { $script:Config.NotesRoot = $saved }
+    }
+
+    It 'imports Terminal-Icons from ll only when the loader deferred it' {
+        Mock Import-Module { }
+        Mock Get-Module { }
+        $saved = $script:DeferredTerminalIcons
+        try {
+            $script:DeferredTerminalIcons = $null
+            Import-DeferredTerminalIcon
+            Should -Invoke Import-Module -Times 0 -Exactly
+            $script:DeferredTerminalIcons = $true
+            Import-DeferredTerminalIcon
+            Should -Invoke Import-Module -Times 1 -Exactly -ParameterFilter { $Name -eq 'Terminal-Icons' -and $Global }
+        } finally { $script:DeferredTerminalIcons = $saved }
+    }
+}
+
 Describe 'pwshup (profile side)' {
 
     It 'stays quiet while the updater is healthy' {

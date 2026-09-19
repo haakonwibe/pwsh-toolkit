@@ -177,13 +177,37 @@ function Get-PwshupInvocation {
     , $argv
 }
 
-# Startup: one line, only when the unattended updater has stalled. Reading a
-# small JSON file costs about a millisecond, and nothing at all when pwshup
-# isn't installed.
-$pwshupStateFile = Join-Path $script:PwshUpdateRoot 'pwshup\state\state.json'
-if (Test-Path -LiteralPath $pwshupStateFile) {
+function Read-PwshUpdateState {
+    <#
+    .SYNOPSIS
+        The three state.json fields the startup warning needs, as strings.
+    .DESCRIPTION
+        Uses System.Text.Json rather than ConvertFrom-Json: this runs in every
+        shell, and ConvertFrom-Json's first call in a session costs ~55 ms of
+        warm-up against ~10 ms here. Missing, null or non-string fields come back
+        $null. Takes the raw text, so it's unit-testable without a file.
+    #>
+    param([Parameter(Mandatory)][string] $Json)
+    $doc = [System.Text.Json.JsonDocument]::Parse($Json)
     try {
-        $pwshupWarning = Get-PwshUpdateWarning -State (Get-Content -Raw -LiteralPath $pwshupStateFile | ConvertFrom-Json)
+        # EnumerateObject rather than TryGetProperty: its out parameter is a
+        # struct, which [ref] can't bind from PowerShell.
+        $state = [ordered]@{ LastSuccess = $null; Staged = $null; StagedAt = $null }
+        if ($doc.RootElement.ValueKind -eq 'Object') {
+            foreach ($p in $doc.RootElement.EnumerateObject()) {
+                if ($state.Contains($p.Name) -and $p.Value.ValueKind -eq 'String') { $state[$p.Name] = $p.Value.GetString() }
+            }
+        }
+        [pscustomobject]$state
+    } finally { $doc.Dispose() }
+}
+
+# Startup: one line, only when the unattended updater has stalled. Costs one
+# small file read, and nothing at all when pwshup isn't installed.
+$pwshupStateFile = Join-Path $script:PwshUpdateRoot 'pwshup\state\state.json'
+if ([IO.File]::Exists($pwshupStateFile)) {
+    try {
+        $pwshupWarning = Get-PwshUpdateWarning -State (Read-PwshUpdateState -Json ([IO.File]::ReadAllText($pwshupStateFile)))
         if ($pwshupWarning) { Write-Host "  $pwshupWarning" -ForegroundColor DarkYellow }
     } catch { Write-Verbose "pwshup: couldn't read $pwshupStateFile ($_)" }
 }

@@ -57,6 +57,16 @@ Set-Alias ask Ask-ChAt
 # entries. NOTE: -Force already includes hidden items — the previous `la` used
 # `-Force -Hidden`, but -Hidden *filters to only* hidden entries, so it showed
 # nothing in a normal directory. -Force alone is the "show everything" switch.
+function Import-DeferredTerminalIcon {
+    # The loader defers Terminal-Icons to the first idle moment after the
+    # prompt (it costs ~0.5 s). A listing that runs before then imports it here
+    # instead, so the first ll/la/lh already shows icons. A no-op when the
+    # loader didn't defer it (Custom prompt) or it's already loaded.
+    if ($script:DeferredTerminalIcons -and -not (Get-Module Terminal-Icons)) {
+        Import-Module Terminal-Icons -Global -ErrorAction Ignore
+    }
+}
+
 function ll {
     <#
     .SYNOPSIS
@@ -69,6 +79,7 @@ function ll {
 
         Lists the visible files and folders in the current directory as a table.
     #>
+    Import-DeferredTerminalIcon
     Get-ChildItem | Format-Table -AutoSize
 }
 function la {
@@ -83,6 +94,7 @@ function la {
 
         Lists everything in the current directory — normal, hidden, and system.
     #>
+    Import-DeferredTerminalIcon
     Get-ChildItem -Force | Format-Table -AutoSize
 }
 function lh {
@@ -100,6 +112,7 @@ function lh {
         e.g. surfaces a stray .gitignore or desktop.ini without the noise.
     #>
     $mask = [System.IO.FileAttributes]::Hidden -bor [System.IO.FileAttributes]::System
+    Import-DeferredTerminalIcon
     Get-ChildItem -Force | Where-Object { ($_.Attributes -band $mask) -ne 0 } | Format-Table -AutoSize
 }
 

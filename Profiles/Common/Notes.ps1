@@ -11,8 +11,8 @@
 # `Set-NotesRoot`       - interactive picker over auto-detected candidates
 #                         (Obsidian vaults, OneDrive Documents, local Documents)
 #
-# Storage: $script:Config.NotesRoot. When unset in config.psd1, resolved via
-# the cascade in Resolve-NotesRoot below — prefers an Obsidian vault inside
+# Storage: $script:Config.NotesRoot. When unset in config.psd1, resolved on
+# first use (Get-NotesRoot) via the cascade in Resolve-NotesRoot — prefers an Obsidian vault inside
 # OneDrive (best sync story) over a local-only vault. Run Set-NotesRoot to
 # override interactively and get a config.psd1 snippet to make it permanent.
 #
@@ -153,7 +153,7 @@ function Set-NotesRoot {
 
     Write-Host ''
     Write-Host '  Choose a NotesRoot:' -ForegroundColor Cyan
-    Write-Host "  Current: $($script:Config.NotesRoot)" -ForegroundColor DarkGray
+    Write-Host "  Current: $(Get-NotesRoot)" -ForegroundColor DarkGray
     Write-Host ''
     for ($i = 0; $i -lt $candidates.Count; $i++) {
         Write-Host ('    {0,2}. {1}' -f ($i + 1), $candidates[$i].Label)
@@ -194,7 +194,7 @@ function Get-NoteFile {
         Returns nothing when the folder doesn't exist.
     #>
     [OutputType([System.IO.FileInfo])]
-    param([string] $Root = $script:Config.NotesRoot)
+    param([string] $Root = (Get-NotesRoot))
 
     if (-not $Root -or -not (Test-Path -LiteralPath $Root)) { return }
     Get-ChildItem -LiteralPath $Root -Filter '*.md' -File -ErrorAction Ignore |
@@ -328,7 +328,7 @@ function note {
         [switch] $Edit
     )
 
-    $notesRoot = $script:Config.NotesRoot
+    $notesRoot = Get-NotesRoot
     if (-not $notesRoot) {
         Write-Host '  NotesRoot not configured. Set in Profiles/config.psd1:' -ForegroundColor Yellow
         Write-Host "      NotesRoot = '$env:USERPROFILE\Documents\Notes'" -ForegroundColor DarkGray
@@ -418,7 +418,7 @@ function notes {
     [CmdletBinding()]
     param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Query)
 
-    $notesRoot = $script:Config.NotesRoot
+    $notesRoot = Get-NotesRoot
     $files = @(Get-NoteFile -Root $notesRoot)
     if ($files.Count -eq 0) {
         Write-Host "  No daily notes in '$notesRoot' yet.  note <text> starts one." -ForegroundColor Yellow
@@ -456,11 +456,14 @@ function notes {
     Show-NoteFile -Path $selected.Path
 }
 
-# Resolve NotesRoot if unset at this point. Runs once at Notes.ps1 load time
-# (after the loader's hard-fallback block, which leaves NotesRoot as $null
-# when neither config.psd1 nor config.example.psd1 set it).
-if (-not $script:Config.NotesRoot) {
-    $script:Config.NotesRoot = Resolve-NotesRoot
+function Get-NotesRoot {
+    # NotesRoot, resolving the cascade on first use and caching it in
+    # $script:Config. It used to resolve when Notes.ps1 loaded, which meant
+    # parsing Obsidian's config in every shell - the costliest thing this file
+    # did, for a folder most shells never touch. The loader leaves NotesRoot
+    # $null when neither config file sets it.
+    if (-not $script:Config.NotesRoot) { $script:Config.NotesRoot = Resolve-NotesRoot }
+    $script:Config.NotesRoot
 }
 
 function Find-Note {
@@ -483,7 +486,7 @@ function Find-Note {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string] $Query)
 
-    $notesRoot = $script:Config.NotesRoot
+    $notesRoot = Get-NotesRoot
     if (-not $notesRoot) {
         Write-Host '  NotesRoot not configured. Run Set-NotesRoot or set it in Profiles/config.psd1.' -ForegroundColor Yellow
         return

@@ -24,6 +24,7 @@ BeforeAll {
 
         $content = @"
 `$env:PSPROFILE_NO_TIPS = '1'
+`$env:PWSH_TOOLKIT_TIMING = '1'   # Measure-ProfileLoad's marks, for the load-budget tests
 `$Error.Clear()
 `$sw = [System.Diagnostics.Stopwatch]::StartNew()
 . '$LoaderPath'
@@ -120,6 +121,9 @@ Pop-Location
     JumpFolderCount   = `$script:JumpFolders.Count
     WingetScript      = `$script:WingetUpgradeScript
     OnIdleCount       = @(Get-EventSubscriber -SourceIdentifier PowerShell.OnIdle -ErrorAction Ignore).Count
+    OnIdleActions     = @(Get-EventSubscriber -SourceIdentifier PowerShell.OnIdle -ErrorAction Ignore | ForEach-Object { `$_.Action.Command })
+    LoadTimings       = @(`$script:ProfileLoadTimings | ForEach-Object { @{ Name = `$_.Name; Ms = `$_.Ms } })
+    TerminalIconsLoaded = [bool](Get-Module Terminal-Icons)
 } | ConvertTo-Json -Compress | Set-Content -LiteralPath '$probeOutput' -Encoding utf8
 "@
 
@@ -264,11 +268,13 @@ Describe 'Per-host prompt override (a Hosts file swaps OMP for Custom)' {
         $script:HostPromptProbe.HasOurPrompt | Should -BeTrue
     }
 
-    It 'skips the Oh My Posh tail — no PowerShell.OnIdle subscriber registered' {
+    It 'skips the Oh My Posh tail — no Graph-indicator OnIdle handler registered' {
         # The flip to 'Custom' makes the OMP tail gate fail, so the Graph OnIdle
         # handler never registers. (The plain OhMyPosh probe DOES register it.)
-        $script:HostPromptProbe.OnIdleCount | Should -Be 0
-        $script:OmpProbe.OnIdleCount        | Should -BeGreaterThan 0
+        # Counted by action, not in total: the one-shot deferred Terminal-Icons
+        # import is also an OnIdle handler, registered earlier in the OMP branch.
+        @($script:HostPromptProbe.OnIdleActions | Where-Object { $_ -match 'Update-PoshGraphStatus' }).Count | Should -Be 0
+        @($script:OmpProbe.OnIdleActions        | Where-Object { $_ -match 'Update-PoshGraphStatus' }).Count | Should -BeGreaterThan 0
     }
 
     It 'loads cleanly' {
@@ -287,6 +293,32 @@ Describe 'Profile startup budget' {
 
     It 'OhMyPosh-mode load stays under 8 seconds' {
         $script:OmpProbe.LoadMs | Should -BeLessThan 8000
+    }
+
+    # The finer check is a shape, not a number: CI hardware isn't a dev laptop,
+    # so a tight absolute ceiling would be flaky. What the shape catches is one
+    # file quietly growing a slow probe (a Get-Module -ListAvailable, a JSON
+    # parse, an eager import) - how startup regressed before. The marks come
+    # from the loader's PWSH_TOOLKIT_TIMING instrumentation (Measure-ProfileLoad).
+    It 'times every phase and every Common file' {
+        $names = @($script:CustomProbe.LoadTimings | ForEach-Object { $_.Name })
+        foreach ($phase in 'config', 'M365 gate', 'bookmarks', 'tip') { $names | Should -Contain $phase }
+        foreach ($file in (Get-ChildItem (Join-Path $script:repoRoot 'Profiles/Common/*.ps1'))) {
+            $names | Should -Contain "Common\$($file.Name)"
+        }
+    }
+
+    It 'lets no single Common file take more than 40% of Common/' {
+        $common = @($script:CustomProbe.LoadTimings | Where-Object { $_.Name -like 'Common\*' })
+        $total  = ($common | Measure-Object -Property Ms -Sum).Sum
+        $worst  = $common | Sort-Object -Property Ms -Descending | Select-Object -First 1
+        ($worst.Ms / $total) | Should -BeLessThan 0.4 -Because "$($worst.Name) took $([int]$worst.Ms) of $([int]$total) ms"
+    }
+
+    It 'leaves Terminal-Icons until after the first prompt' {
+        # Deferred to the first PowerShell.OnIdle; importing it during load
+        # cost ~0.5 s a shell.
+        $script:OmpProbe.TerminalIconsLoaded | Should -BeFalse
     }
 }
 
@@ -322,6 +354,7 @@ Describe 'Folder jumper' {
         $script:CustomProbe.JumpFolderCount | Should -BeGreaterOrEqual 5
     }
 }
+
 
 Describe 'Wrapper script paths' {
     It 'WingetUpgradeScript resolves under ToolkitRoot' {

@@ -357,7 +357,24 @@ effect, with (a) reading it — history for the cold start, the log for trends.
   (`Get-ToolkitDataPath`, ARCHITECTURE.md #13); and make "would I paste this
   straight into an issue?" the bar any report output has to clear.
 
-## 11. Profile startup budget — measure it, then spend the findings
+## 11. Profile startup budget — measure it, then spend the findings — ✅ Shipped 2026-09-19
+
+> Status note: `Measure-ProfileLoad` shipped as a public command, backed by
+> timing marks in the loader (`PWSH_TOOLKIT_TIMING`). The open questions below
+> were resolved as follows:
+> - **Budget:** a shape rather than a ceiling. No Common file may take over 40%
+>   of `Common/`, and a static test forbids the known-expensive calls at load.
+> - **Terminal-Icons:** moved to the first idle moment after the prompt rather
+>   than the first listing, which doesn't just relocate the annoyance.
+>   `ll`/`la`/`lh` import it if they run first.
+> - **Oh My Posh init:** the largest remaining cost, about 0.7 s. It stays
+>   synchronous by choice: deferring it means a plain prompt that pops into the
+>   themed one. Oh My Posh's own `async` option only moves the same work into
+>   the first prompt call.
+> - **Cold starts:** still worth measuring after a reboot; `Measure-ProfileLoad`
+>   reports its first run separately.
+>
+> Kept below for the design record.
 
 **What:** `Measure-ProfileLoad` — the profile instruments its own load and
 prints where the time went, per phase and per file — plus a budget assertion in

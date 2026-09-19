@@ -19,6 +19,24 @@
 # cross-file dependencies. Touch profile-load behavior with that document open.
 # ============================================================================
 
+# ─── Load timing (Measure-ProfileLoad) ──────────────────────────────────────
+# Off unless PWSH_TOOLKIT_TIMING is set; then each phase and each file records
+# how long it took into $script:ProfileLoadTimings, which Measure-ProfileLoad
+# reads back from a child process. Off, a mark is one no-op scriptblock call.
+$script:ProfileLoadTimings = $null
+$markLoad = {}
+if ($env:PWSH_TOOLKIT_TIMING) {
+    $script:ProfileLoadTimings = [System.Collections.Generic.List[object]]::new()
+    $script:ProfileLoadClock   = [System.Diagnostics.Stopwatch]::StartNew()
+    $script:ProfileLoadLast    = 0.0
+    $markLoad = {
+        param([string] $Name)
+        $now = $script:ProfileLoadClock.Elapsed.TotalMilliseconds
+        $script:ProfileLoadTimings.Add([pscustomobject]@{ Name = $Name; Ms = $now - $script:ProfileLoadLast })
+        $script:ProfileLoadLast = $now
+    }
+}
+
 # ─── Resolve the profile root (symlink-aware) ───────────────────────────────
 # Works for three install patterns:
 #   1. $PROFILE is a symlink → follow .Target to the real file in the repo.
@@ -84,9 +102,10 @@ if ($null -eq $script:Config.OneDriveOrg) {
 }
 
 # NotesRoot resolution is more involved (Obsidian config detection + OneDrive
-# preference cascade) — it's done by Resolve-NotesRoot in Notes.ps1 at the
-# end of that file's load, after Get-ObsidianVault and the cascade helpers
-# are defined. The loader leaves NotesRoot as $null here; Notes.ps1 fills it.
+# preference cascade) — Notes.ps1's Get-NotesRoot does it on the first notes
+# command, not at load: parsing Obsidian's config cost every shell more than
+# the rest of Notes.ps1 together. The loader leaves NotesRoot as $null here.
+& $markLoad 'config'
 
 # ─── Prompt setup (OhMyPosh branch) ─────────────────────────────────────────
 if ($script:Config.Prompt -eq 'OhMyPosh') {
@@ -142,8 +161,17 @@ if ($script:Config.Prompt -eq 'OhMyPosh') {
         Write-Warning "Falling back to default prompt."
     }
 
-    if (Get-Module -ListAvailable -Name Terminal-Icons) {
-        Import-Module Terminal-Icons
+    & $markLoad 'Oh My Posh init'
+
+    # Terminal-Icons costs ~0.5 s to find and import - more than all of Common/
+    # together - and only matters once a folder is listed. Import it on the
+    # first idle moment after the prompt is up instead of before it (-Global:
+    # an event action has its own scope). ll/la/lh import it themselves if
+    # they run first. No Get-Module -ListAvailable probe: a missing module is
+    # just an ignored import.
+    $script:DeferredTerminalIcons = $true
+    $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -MaxTriggerCount 1 -Action {
+        Import-Module Terminal-Icons -Global -ErrorAction Ignore
     }
 }
 
@@ -165,6 +193,7 @@ if (Test-Path $commonPath) {
             Write-Verbose "  Loading: $($file.Name)"
             try { . $file.FullName }
             catch { Write-Warning "pwsh-toolkit: failed to load Common\$($file.Name): $_" }
+            & $markLoad "Common\$($file.Name)"
         }
 } else {
     Write-Warning "Common profile directory not found: $commonPath"
@@ -172,13 +201,22 @@ if (Test-Path $commonPath) {
 
 # ─── Load M365/ (if Microsoft.Graph is installed and not disabled) ──────────
 $disableM365 = [bool]$script:Config.Features.DisableM365
-if (-not $disableM365 -and (Get-Module -ListAvailable -Name Microsoft.Graph)) {
+# A folder check on each PSModulePath entry, not Get-Module -ListAvailable:
+# same answer for an installed module, at a fraction of the cost (~1 ms vs
+# ~70 ms per shell).
+$graphInstalled = -not $disableM365 -and @(
+    $env:PSModulePath -split [IO.Path]::PathSeparator |
+        Where-Object { $_ -and [IO.Directory]::Exists((Join-Path $_ 'Microsoft.Graph')) }
+).Count -gt 0
+& $markLoad 'M365 gate'
+if ($graphInstalled) {
     if (Test-Path $m365Path) {
         Get-ChildItem "$m365Path\*.ps1" -ErrorAction SilentlyContinue | ForEach-Object {
             $file = $_
             Write-Verbose "  Loading: $($file.Name)"
             try { . $file.FullName }
             catch { Write-Warning "pwsh-toolkit: failed to load M365\$($file.Name): $_" }
+            & $markLoad "M365\$($file.Name)"
         }
     }
 } elseif ($disableM365) {
@@ -197,6 +235,7 @@ if (Test-Path $machineConfig) {
     Write-Verbose "Loading machine-specific configuration: $env:COMPUTERNAME"
     try { . $machineConfig }
     catch { Write-Warning "pwsh-toolkit: failed to load Machines\$env:COMPUTERNAME.ps1: $_" }
+    & $markLoad "Machines\$env:COMPUTERNAME.ps1"
 }
 
 # ─── Per-host overrides ─────────────────────────────────────────────────────
@@ -206,6 +245,7 @@ if (Test-Path $hostConfig) {
     Write-Verbose "Loading host-specific configuration: $hostName"
     try { . $hostConfig }
     catch { Write-Warning "pwsh-toolkit: failed to load Hosts\$hostName.ps1: $_" }
+    & $markLoad "Hosts\$hostName.ps1"
 }
 
 # ─── Jump-folder bookmarks (`j -Add`) ───────────────────────────────────────
@@ -214,8 +254,13 @@ if (Test-Path $hostConfig) {
 # sit at the END of the list and can never shadow a built-in/config/machine
 # destination in `j <text>` first-match lookup. (Navigation.ps1 defines
 # Sync-JumpBookmark but deliberately doesn't call it at dot-source time; the
-# Get-Command guard keeps this quiet if Navigation.ps1 failed to load.)
-if (Get-Command Sync-JumpBookmark -ErrorAction Ignore) { Sync-JumpBookmark }
+# guard keeps this quiet if Navigation.ps1 failed to load.)
+#
+# Guards in this tail test the Function: drive rather than Get-Command. For a
+# name that isn't defined, Get-Command searches every module on PSModulePath
+# (~70 ms per miss, every shell).
+if (Test-Path Function:\Sync-JumpBookmark) { Sync-JumpBookmark }
+& $markLoad 'bookmarks'
 
 # ─── OhMyPosh tail: Graph indicator + transient prompt ─────────────────────
 if ($script:Config.Prompt -eq 'OhMyPosh') {
@@ -245,14 +290,18 @@ if ($script:Config.Prompt -eq 'OhMyPosh') {
         Update-PoshGraphStatus
     } | Out-Null
 
-    if (Get-Command Enable-PoshTransientPrompt -ErrorAction Ignore) {
+    # Oh My Posh 31 drives the transient prompt from the theme and no longer
+    # defines this function; older versions still need the call.
+    if (Test-Path Function:\Enable-PoshTransientPrompt) {
         Enable-PoshTransientPrompt
     }
+    & $markLoad 'Oh My Posh tail'
 }
 
 # ─── Rotating tip (or stay silent) ─────────────────────────────────────────
 # Env var wins over config (handy for CI / scripts that source the profile).
 $disableTips = $env:PSPROFILE_NO_TIPS -or $script:Config.DisableStartupTips
-if (-not $disableTips -and (Get-Command Show-ProfileTip -ErrorAction Ignore)) {
+if (-not $disableTips -and (Test-Path Function:\Show-ProfileTip)) {
     Show-ProfileTip
 }
+& $markLoad 'tip'

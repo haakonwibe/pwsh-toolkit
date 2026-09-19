@@ -14,6 +14,7 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'winup  —  interactive winget upgrade picker with CMTrace-friendly logging';                 E = 'Try: winup   (also: winup -All to skip the picker)' }
     [pscustomobject]@{ H = 'winup -Elevated  —  upgrade with a single UAC prompt up front, not one per package';        E = 'Try: winup -Elevated   (runs via Windows sudo / gsudo when enabled; new window otherwise)' }
     [pscustomobject]@{ H = 'pwshup  —  systemwide PowerShell 7 from the ZIP, kept current nightly (no MSI after 7.6)';  E = 'Try: pwshup   (status; pwshup -Install sets it up once, pwshup -Rollback undoes an update)' }
+    [pscustomobject]@{ H = 'Measure-ProfileLoad  —  where your shell''s startup time goes, per phase and per file';    E = 'Try: Measure-ProfileLoad   (fresh shells, median per step, next to a bare pwsh start)' }
     [pscustomobject]@{ H = 'tagdl  —  AI-tagged Downloads with BBS-style file descriptions';                            E = 'Try: tagdl -Limit 5   (then browse with dird or fr)' }
     [pscustomobject]@{ H = 'sortdl  —  file tagged Downloads into per-bucket subfolders (preview + undo)';             E = 'Try: sortdl -WhatIf   (then sortdl to file them; sortdl -Undo to reverse)' }
     [pscustomobject]@{ H = 'dird / fr  —  directory listing with AI descriptions and color coding';                     E = 'Try: fr ~\Downloads   (also: dird -GroupByBucket, dird -Bucket Installers)' }

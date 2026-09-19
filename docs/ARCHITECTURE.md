@@ -118,6 +118,8 @@ if (Get-Command Get-MgContext -ErrorAction Ignore) {
 Remove-Item Env:\POSH_GRAPH -ErrorAction Ignore   # might not exist — no need to log it
 ```
 
+**At profile load, guard a *function* with `Test-Path Function:\Name` instead.** When the name isn't defined, `Get-Command` searches every module on `PSModulePath` before giving up: about 70 ms per miss, in every shell. That's how `Get-Command Enable-PoshTransientPrompt` came to cost every start once Oh My Posh 31 dropped the function. `Get-Command` stays right for cmdlets and executables, and for anything that runs on demand rather than at load (see #17).
+
 ### 9. Skip interactive-only setup when stdout is redirected
 
 `Common/PSReadLine.ps1` guards its `Set-PSReadLineOption -PredictionSource History` calls with `if ([Console]::IsOutputRedirected) { return }`. Without the guard, PSReadLine emits "The handle is invalid" into `$Error` on every CI run, `pwsh -Command` invocation, or piped-output scenario. Apply the same pattern to any future host-feature setup that requires a real TTY.
@@ -217,6 +219,27 @@ Handlers must also stay quiet. The prompt line is still on screen while one runs
 - **Link-safe removal only.** 5.1's `Remove-Item -Recurse` follows junctions, so deleting through `7`, or a planted link, could take out `C:\Program Files\PowerShell\Modules`. All removal goes through `Remove-PwshLink`/`Remove-PwshTree`, which never enter a reparse point. A test forbids `Remove-Item -Recurse` on the file system, and the harness plants such a link to prove it.
 - **Switch the junction only while nothing runs from it.** pwsh doesn't resolve the junction: `$PSHOME` and every assembly path stay `...\7\...` (measured). A session left open across a switch would load its remaining assemblies from the new version. Updates stage fully and verify first; the switch itself is deferred until no pwsh runs from `7`, unless `-Force` is given.
 - **All mutable state lives under the admin-only install root:** staging, logs, the state file and the lock. `C:\ProgramData` and `%TEMP%` let ordinary users create folders first, and a folder a user created first is a way to redirect SYSTEM's writes.
+
+---
+
+### 17. Profile load time is budgeted: measure with `Measure-ProfileLoad`, keep probes off the load path
+
+Every shell pays for everything at the top level of the loader and every `Common/`/`M365/` file. A few calls cost far more than they look:
+
+| Call | Cost | What to do instead |
+|---|---|---|
+| `Get-Module -ListAvailable` | ~70 ms | Check for the module folder on `PSModulePath` |
+| The session's first `ConvertFrom-Json` | ~55 ms | `System.Text.Json`, or parse on first use |
+| An eager `Import-Module` | often 0.5 s | Defer it |
+| `Get-Command` on an undefined name | ~70 ms | `Test-Path Function:\Name` (#8) |
+
+Three measures keep them out:
+
+- **Instrumentation.** With `PWSH_TOOLKIT_TIMING` set, the loader records each phase and file into `$script:ProfileLoadTimings`. `Measure-ProfileLoad` loads the profile in fresh processes that way and reports medians per step beside a bare `pwsh` start. Measure before optimizing: the first measurement found about 70% of the load in two optional modules (Oh My Posh init and Terminal-Icons), not in the toolkit's own files.
+- **Deferral.** Terminal-Icons imports on the first `PowerShell.OnIdle` after the prompt appears (one-shot, `-Global`, since an event action has its own scope). `ll`/`la`/`lh` import it themselves if they run first. The notes folder cascade resolves on the first notes command (`Get-NotesRoot`). Oh My Posh init stays synchronous by choice: deferring it would show a plain prompt first.
+- **Tests.**
+  - A unit test forbids `Get-Module -ListAvailable`, `ConvertFrom-Json` and `Import-Module` at the top level of any loaded file, and non-`oh-my-posh` `Get-Command` in the loader. Inside a function or scriptblock is fine; those run on demand.
+  - The smoke suite checks the load's *shape*: every Common file is timed, and no single one takes over 40% of `Common/`. It deliberately doesn't use a tight absolute number, because CI hardware isn't a dev laptop.
 
 ## What NOT to do
 
