@@ -254,3 +254,187 @@ query, run it, show the result. Natural language to Intune/Graph, in the shell.
 **Why it fits the arc:** Extends the existing Claude integration (`wtf`, `ask`,
 `tagdl`) from explanation into action. Highest variance — needs guardrails so a
 generated query is shown/confirmed before anything runs, and read-only by default.
+
+---
+
+# Captured 2026-08-25
+
+Three candidates noted as they came up; none of them is started. Where an entry
+rests on a measurement, the measurement is deliberately not recorded here —
+re-run it when picking the entry up. A number from one machine on one day ages
+badly, and in two of the three cases producing that number is the feature.
+
+## 9. `peek` for `.intunewin` — read the package, not just the portal
+
+> Status note (2026-09-19): likely absorbed by #12. The companion module
+> already handles the format, so `peek` would hand `.intunewin` files to it
+> rather than carry its own decoder.
+
+**Evidence:** `AppData\Local\IntuneWinAppUtil\IntuneWinAppUtil.exe` and
+`Downloads\Installers\IntuneWinAppUtilDecoder.exe` are both on this machine.
+The second is the tell: inspecting a Win32 package today means leaving the
+toolkit for a third-party decoder in a Downloads folder.
+
+**What:** `peek app.intunewin` reports what's inside a package without
+hand-unzipping it — setup file, package name, unencrypted payload size, and for
+MSI packages the product/upgrade codes, execution context and per-machine flag.
+`-Extract` decrypts the payload and jumps you into it, exactly as `peek` does
+for a `.rar` today.
+
+**Why it fits:** `peek` already dispatches by extension, so this is one more
+branch on an existing table — no new verb, no new UX. And it closes a real
+asymmetry: the M365 half of the toolkit reads Win32 apps *from Graph*
+(inventory, detection rules, assignments, content versions) and has never
+touched the local artifact those apps are built from. The fields it would
+surface are the same ones `Get-IntuneWin32AppDetail` reports from the cloud
+side — readable *before* the upload rather than after.
+
+**Feasibility:** self-contained and offline. A `.intunewin` is a zip holding
+`Metadata\Detection.xml` plus an AES-encrypted `Contents\IntunePackage.intunewin`,
+and the key lives in that XML — so decryption needs no tenant, no network, and
+no secret. Test fixtures can be generated locally with the `IntuneWinAppUtil.exe`
+already installed. This is the half that doesn't need luck.
+
+**The stretch:** `Get-IntuneWin32App … | peek` — inspect what is actually
+deployed to the fleet rather than what happens to be on this disk.
+`Get-IntuneWin32AppContentInfo` already walks the committed content versions.
+Whether it can be finished depends on the file encryption info being reachable
+on a *read* from Graph, which is unverified — check that before promising it,
+and don't let it hold up the local half.
+
+**Open questions:**
+- Does `peek` own this, or does it want its own verb? `peek` keeps the muscle
+  memory; a separate verb keeps `peek -List` / `-Active` / `-Clean` coherent,
+  since a decrypted package isn't quite a temp extraction like the others.
+- Decrypt in-process with .NET AES, or shell out to the decoder that's already
+  there? In-process removes the dependency and is testable; shelling out is an
+  afternoon. Prefer in-process — the key handling is ~20 lines and the whole
+  point is retiring the downloaded exe.
+- Prior art check before building: MSEndpointMgr's `IntuneWin32App` module
+  covers packaging/upload/download. Worth reading for format details, and worth
+  being honest in the README about what's novel here versus what's convenience.
+
+## 10. The shell history is a data set nobody reads
+
+**What:** Muscle memory favours the generic command over the toolkit one — `cd`
+over `j`, a bare listing over `ll`, `winget` over `winup` — and the toolkit has
+no way to notice, so the gap persists indefinitely. Two possible shapes, and
+they are separable.
+
+(a) A report — `Get-ToolkitUsage`: which commands actually get used, which have
+never once been run, and which keep getting typed the long way. The raw material
+is PSReadLine's history file, already on disk.
+
+(b) A just-in-time nudge through PSReadLine's `AddToHistoryHandler`: after a `cd`
+into a directory `prj` would have jumped to, one dim line naming the shorter
+form. Contextual, at the moment of the miss, derived from real input rather than
+from a guess about what the user doesn't know.
+
+**Why it fits:** `toolkit`, `tip` and `how` all attack the discovery problem —
+the toolkit has more commands than anyone holds in their head — and all three
+guess at what the user doesn't know. This is the version that reads what the
+user actually does. The buffer/handler mechanics are already understood from
+`how` (ARCHITECTURE.md #15).
+
+**Constraint, known up front:** the PSReadLine history file carries **no
+timestamps**. All-time counts are the only window it can produce; anything
+trend-shaped ("this week", "since 0.7.0") needs its own log written going
+forward. That argues for (b) writing a small timestamped usage log as a side
+effect, with (a) reading it — history for the cold start, the log for trends.
+
+**Open questions:**
+- Nudge budget: once per pattern per N days? Only above a confidence bar?
+  Without a budget this is Clippy, and the off switch has to be a config slot,
+  not folklore.
+- Where does the nudge render? The handler runs *before* execution, so writing
+  from it puts the hint above the command's own output. Surfacing it on the
+  next prompt is correct, but the prompt is owned by Oh My Posh in the common
+  case — `OnIdle` may be the seam. Verify against both prompt modes.
+- Privacy is the whole ballgame here, and it constrains the feature rather than
+  just the docs. A shell history is one of the likelier places to find a secret
+  typed on a command line. Count toolkit command *names* and nothing else: never
+  store or render raw history lines, arguments or paths; keep the store local
+  (`Get-ToolkitDataPath`, ARCHITECTURE.md #13); and make "would I paste this
+  straight into an issue?" the bar any report output has to clear.
+
+## 11. Profile startup budget — measure it, then spend the findings
+
+**What:** `Measure-ProfileLoad` — the profile instruments its own load and
+prints where the time went, per phase and per file — plus a budget assertion in
+the smoke suite, so a future file cannot quietly add a third of a second. The
+fixes then follow from the numbers rather than from taste.
+
+**Shape of a first pass** (the figures are deliberately not written down — take
+fresh ones): the cost is not evenly spread, and dot-sourcing `Common/` is not
+the problem it looks like. The largest single line item was an optional module
+import — `Terminal-Icons`, which is lazy-loadable and currently loads in every
+shell whether or not a listing is ever run. One Common file came out several
+times heavier than the next one down, which wants an explanation before it wants
+an optimization. The two `Get-Module -ListAvailable` probes and the prompt
+initialisation each cost more than their job suggests.
+
+**Why it fits:** the same instinct as `docs/how-eval.md` — measure the thing
+instead of having opinions about it — turned on the toolkit itself. It also fits
+the two-layer test split (ARCHITECTURE.md #14): a budget is a load-state
+assertion, so it belongs in `Smoke.Tests.ps1`.
+
+**Open questions:**
+- A budget in CI is a flaky-test risk, since CI hardware is not the dev machine.
+  Assert a *relative* shape (no single file over N% of the total) or pin an
+  absolute ceiling loose enough to catch only real regressions?
+- Lazy-loading the heavy optional import means the first listing pays for it
+  instead of every shell. Better, but it moves a cost into an interactive
+  moment — confirm it doesn't just relocate the annoyance.
+- Cold and warm load differ by far more than the tuning stands to gain, and the
+  cold case is the one actually felt (the first shell after a boot). Measure
+  cold as well, or the work optimizes the case that was never the problem.
+- Does `Measure-ProfileLoad` ship as a public command or stay a dev tool? Public
+  makes the toolkit's own cost self-evident to anyone forking it; a dev tool
+  keeps the command surface smaller.
+
+---
+
+# Captured 2026-09-19
+
+## 12. Companion modules — front a separately built module without absorbing it
+
+**What:** Give the toolkit a way to front a module developed in its own repo.
+The first candidate is a device-side Intune Win32 backup module: save the
+`.intunewin` content of any Win32 app this device is already entitled to,
+device- or user-targeted, and read the device's own app state. The toolkit side
+stays thin:
+- a short alias;
+- a place in `toolkit` / `tip`;
+- `peek` handing `.intunewin` files to the module, which absorbs #9.
+
+**Why it fits:** The M365 half already reads Win32 apps from Graph (#7). This is
+the device-side counterpart: what this machine actually received. It is also
+the natural home for #9's package inspection, since the module already handles
+the format.
+
+**Shape (leaning):**
+- **Don't vendor the source.** The module keeps its own repo, tests and release.
+  It has a build step (a compiled helper), needs elevation for most commands,
+  and keeps its own provenance record. None of that belongs in a profile
+  toolkit's install path.
+- **Install it to the all-users module path** (`C:\Program Files\PowerShell\Modules`),
+  which `pwshup` keeps stable across PowerShell updates.
+- **Add nothing to startup.** No import and no `Get-Module -ListAvailable` probe
+  at load (see #11). The wrappers resolve the command on first use through
+  module autoloading, and print an install hint when it's missing.
+- **Elevation.** Either tell the user to run elevated, or relaunch elevated like
+  `winup -Elevated`. Objects don't cross the elevation boundary, so a relaunch
+  only suits the save path.
+
+**Open questions:**
+- Public or private? The toolkit is public and the module isn't yet. A wrapper
+  for a module nobody else can install is noise, so until the module is
+  published the integration can live in a gitignored `Machines/<COMPUTERNAME>.ps1`
+  instead.
+- Which codebase to target: the rewrite, once its download path lands. Keep the
+  command names stable (`Save-…`, `Get-…DeviceAppState`) so the wrapper doesn't
+  care which version is installed.
+- Is this a general "companion module" slot (a config list of optional modules,
+  each with its aliases) or a one-off? One module doesn't justify a mechanism;
+  a second would.
+- Alias names.
