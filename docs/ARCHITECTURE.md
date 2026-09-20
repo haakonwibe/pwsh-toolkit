@@ -245,6 +245,7 @@ Three measures keep them out:
 
 - **Don't auto-publish to PSGallery.** Module split + publishing is v2.
 - **Don't refactor the helpers themselves** unless there's a clear bug. The implementations of `j`, `peek`, `df`, `winup`, etc. have been ironed out over many iterations — preserve their behavior. Focus refactor energy on the loader/config layer.
+- **Don't commit a screenshot taken as yourself.** The repo is public and a PNG publishes whatever was on screen — username, paths, drive labels, installed software, real device names — in a form no `.gitignore` catches later. Capture from a throwaway account with invented data; see [`docs/screenshots/CAPTURE-GUIDE.md`](screenshots/CAPTURE-GUIDE.md).
 - **Don't point the PwshUpdate task at the repo, or "simplify" its deletes to `Remove-Item -Recurse`.** Both are privilege or data-loss bugs that look like cleanups — see #16.
 - **Don't add cross-platform support unprompted.** Many helpers are Windows-specific. Documenting "Windows-only for now" is fine.
 - **Don't add a config knob without updating `config.example.psd1` and the loader's hard-fallback defaults.** Keys missing from both files entirely hit the loader's `if (-not $script:Config.ContainsKey(...)) { ... }` block; only add to that block if the key is critical for the loader itself to function.

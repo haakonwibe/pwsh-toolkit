@@ -14,6 +14,26 @@ All seven shots are captured. If you retake one, keep the existing filename so t
 - **Color scheme:** stock Windows Terminal dark looks clean enough; avoid anything high-contrast or themed
 - **Profile:** `Prompt = 'OhMyPosh'` in `config.psd1` so all shots show the polished prompt
 
+## Capture as a throwaway user, never as yourself
+
+This repo is public, and a screenshot publishes whatever was on screen — permanently, and in a form no `.gitignore` can catch. Every shot here was taken under a scratch local account called `johnsmith`, with invented drive labels and a near-empty app list. Keep it that way: **capture from a throwaway local account or a VM**, never your daily profile.
+
+A terminal shot leaks more than the command you meant to show:
+
+- the **tab title and the prompt** carry your username, and often the host name
+- **any path** exposes your real profile folder, repo layout and customer or project names
+- **`df`** shows your drive labels and sizes; **`uninst`**/**`winup`** list the software you actually run
+- **`cb`** previews real clipboard text, and **`recent`**/**`dird`** show real filenames
+- **`note`**/**`notes`** show whatever you actually wrote
+- anything reading Microsoft Graph shows **real device names, users and tenant**
+
+Rules:
+
+1. **Log in as the throwaway account** (or use a VM), and take every shot there.
+2. **Invent the data.** Generic drive labels, a handful of ordinary apps, sample notes. Graph shots use synthetic data — `cockpit.png` is `contoso.com` with `CONTOSO-W11-*` device names, and the README says so.
+3. **Look at the whole image before saving**, corners included: tab title, prompt segments, the status line, and anything in scrollback above the command.
+4. **If a shot needs your real machine** to be worth taking, it's the wrong shot. Stage the situation instead.
+
 ## Capture tools
 
 - **Win+Shift+S** — Snipping Tool's rectangular capture. Free, built-in. Save as PNG.
