@@ -311,7 +311,10 @@ function Measure-ProfileLoad {
     $rows    = @(ConvertTo-ProfileLoadSummary -Run $warm)
 
     Write-Host ''
-    Write-Host ('  Profile load   {0,6:N0} ms   median of {1} runs; the first took {2:N0} ms' -f $totalMs, $warm.Count, $firstMs) -ForegroundColor Cyan
+    Write-Host ('  Profile load   {0,6:N0} ms   median of {1} runs (spread {2:N0}-{3:N0}); the first took {4:N0} ms' -f $totalMs, $warm.Count, $sums[0], $sums[-1], $firstMs) -ForegroundColor Cyan
+    # A busy machine moves both numbers together: under memory pressure a bare
+    # pwsh start alone has been seen to go from ~240 ms to ~450 ms, which is
+    # why the same profile can take twice as long twenty minutes later.
     Write-Host ('  Bare pwsh      {0,6:N0} ms   so the profile is {1:P0} of a new shell''s start' -f $bare, ($totalMs / ($totalMs + $bare))) -ForegroundColor DarkGray
     Write-Host ''
     $width = [Math]::Max(12, ($rows | Select-Object -First $Top | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum)

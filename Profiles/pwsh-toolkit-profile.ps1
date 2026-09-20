@@ -121,14 +121,17 @@ if ($script:Config.Prompt -eq 'OhMyPosh') {
 
     if ($themeName -eq 'Random') {
         # Roll a random theme from the gallery + bundled set for this shell.
+        # [IO.Directory]::GetFiles, not Get-ChildItem: this walks ~120 gallery
+        # files in every shell, and returning paths rather than FileInfo objects
+        # takes it from ~50 ms to a few.
         $pool = @(
-            (Get-ChildItem -Path (Join-Path $cacheDir '*.omp.json')   -ErrorAction Ignore)
-            (Get-ChildItem -Path (Join-Path $bundledDir '*.omp.json') -ErrorAction Ignore)
+            foreach ($dir in @($cacheDir, $bundledDir)) {
+                if ([IO.Directory]::Exists($dir)) { [IO.Directory]::GetFiles($dir, '*.omp.json') }
+            }
         )
         if ($pool.Count -gt 0) {
-            $pick = $pool | Get-Random
-            $themePath = $pick.FullName
-            $script:Config.OhMyPoshThemeActive = ($pick.BaseName -replace '\.omp$', '')
+            $themePath = $pool | Get-Random
+            $script:Config.OhMyPoshThemeActive = ([IO.Path]::GetFileNameWithoutExtension($themePath) -replace '\.omp$', '')
         }
     }
     elseif ($themeName -and -not ([IO.Path]::IsPathRooted($themeName)) -and -not ($themeName -match '[\\/]')) {

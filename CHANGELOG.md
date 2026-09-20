@@ -46,6 +46,7 @@ All notable changes to this project are documented here. The format follows
   - **The loader's closing guards** test the `Function:` drive instead of calling `Get-Command`. For a name that doesn't exist, `Get-Command` searches every module before giving up (~70 ms), and Oh My Posh 31 no longer defines `Enable-PoshTransientPrompt`, so that guard missed on every start.
   - **The notes folder** is worked out on the first notes command rather than at load, since finding it parses Obsidian's config.
   - **The pwshup startup banner** reads its state with `System.Text.Json` rather than paying `ConvertFrom-Json`'s first-call warm-up.
+  - **The `OhMyPoshTheme = 'Random'` pool** is read with `[IO.Directory]::GetFiles` rather than `Get-ChildItem`: it walks ~120 gallery files in every shell, and returning paths rather than `FileInfo` objects takes it from ~50 ms to ~1 ms.
   - **Oh My Posh's init**, now the largest item at ~0.7 s, stays synchronous by choice. Deferring it would show a plain prompt that then turns into the themed one, and Oh My Posh's own `async` option only moves the same work into the first prompt call.
   - **Guard tests.** A unit test now forbids `Get-Module -ListAvailable`, `ConvertFrom-Json` and `Import-Module` at the top level of any loaded file. The smoke suite checks the load's shape: every Common file is timed, and none takes over 40% of the total. It deliberately doesn't use a tight number, which CI hardware would make flaky.
 
