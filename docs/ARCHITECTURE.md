@@ -186,6 +186,13 @@ Two constraints keep this working:
 - The loader dot-sources `Common/*.ps1` **alphabetically**, and several files call the helper at load time to bind their `$script:` store paths — so `AppData.ps1` is *named* to sort before them. Renaming it (or adding a load-time caller that sorts earlier) breaks profile load.
 - Two places legitimately keep the literal because they run before Common/ exists: `install.ps1` (PS 5.1, standalone) and the loader's OhMyPosh branch. Both carry keep-in-sync comments.
 
+**Scratch is not state, and belongs in `%TEMP%` instead.** `peek` stages its extractions under `%TEMP%\peek` and `psnip` writes its captures to `%TEMP%\pwsh-snips`; neither goes through `Get-ToolkitDataPath`, and that is not an oversight to tidy up. The rule above covers what the toolkit *persists* — things whose loss is a loss. An archive you are about to browse and a snippet you are about to run once are the opposite: they are worthless an hour later, they can be large, and `%TEMP%` is the one location Windows already cleans up on our behalf. Putting them under `%LOCALAPPDATA%` would quietly grow a directory nothing prunes.
+
+Two properties still carry over, because they are what the convention was really protecting:
+
+- **One definition of the root.** `$script:PeekRoot` and `$script:SnipRoot` are each bound once and read everywhere, so a `-List`/`-Clean` pair can't drift from the path the writer uses — the same failure mode a hand-rolled `Join-Path $env:TEMP …` literal would reintroduce.
+- **A way to see it and a way to empty it.** Any command that grows a scratch tree ships both, and uses `peek`'s names for them: `-List` (or `-Active`) and `-Clean`. A tree you can't see is a tree you never clean, and `-Clean` meaning "wipe the tree" in one command and something else in another is worse than a longer name elsewhere — which is why `psnip`'s character repair is `-Repair`.
+
 ### 14. Two test layers: smoke tests for load-state, unit tests for behavior
 
 `tests/` has two complementary suites, and a new test belongs in exactly one of them depending on what it proves:

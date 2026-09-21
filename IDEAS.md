@@ -455,3 +455,85 @@ the format.
   each with its aliases) or a one-off? One module doesn't justify a mechanism;
   a second would.
 - Alias names.
+
+# Captured 2026-09-20
+
+## 13. Safe paste (`psnip`) — ✅ Shipped 2026-09-20
+
+Built in `Profiles/Common/Clipboard.ps1`, beside `cb`. Unlike the entries above
+this one never sat in the backlog: it came out of asking how to get a multi-line
+snippet from a chat into the shell without the Windows Terminal paste warning
+being the only thing standing between a half-landed paste and a live prompt.
+Recorded here because the reasoning outlived the question.
+
+**What:** `psnip` writes the clipboard to a timestamped `.ps1` under
+`%TEMP%\pwsh-snips`, opens it in its own VS Code window, and hands back a
+dot-source line. Nothing executes until you've read it.
+
+**Why it fits:** `cb` already owns "text you paste often". This owns the one
+clipboard operation `cb` doesn't — and the only one that can run code.
+
+**The failure it removes.** The paste warning is a single shrug covering three
+unrelated problems, which is why it teaches you nothing:
+
+- a clipboard ending in a newline submits the paste before you can read it, and
+  copying from rendered text nearly always picks that newline up;
+- several top-level statements run as they arrive, so a half-landed paste has
+  already executed its first half;
+- rendered HTML smuggles in characters that aren't what they look like — curly
+  quotes don't delimit strings, a non-breaking space doesn't separate tokens,
+  and an en dash in front of `-Force` isn't a parameter prefix.
+
+Resolved open questions:
+
+- **Editor, not prompt.** The whole value is a syntax-highlighted read with
+  nothing executed. VS Code when it can be found (PATH, then the two standard
+  install roots, `Peek.ps1`'s pattern), Notepad otherwise, so the command works
+  on a machine that has neither on PATH.
+- **Its own window (`code -n`), and the trust prompt left alone.** Reusing the
+  open window drops unreviewed code into the one that already trusts your
+  project folder; on its own it can sit in Restricted Mode. There is deliberately
+  no attempt to pre-answer Workspace Trust: `psnip` exists to make you look, and
+  that prompt is part of looking. `%TEMP%\pwsh-snips` is the one folder that
+  should never be trusted.
+- **Dot-source, not call.** The returned line is `. <path>` — printed, copied and
+  added to history, so running it is Up then Enter. A snippet that defines
+  functions is the common case for something pasted, and `& <path>` would define
+  them in a child scope and lose them on return.
+- **Repair is opt-in (`-Repair`), never automatic.** Inside a string literal a
+  curly quote is content. Silently rewriting a file is a worse failure than a
+  parse error you can see, so the default captures verbatim.
+- **`-Clean` wipes, it does not repair.** `peek -Clean` already means "wipe the
+  temp tree", and `psnip` grows the same kind of tree. One switch meaning two
+  unrelated things across one toolkit is worse than a longer name for the
+  repair, so the repair took `-Repair` and `-List`/`-Clean` mirror `peek`.
+- **Scratch, not state.** The captures go to `%TEMP%` rather than through
+  `Get-ToolkitDataPath`. That convention covers what the toolkit *persists*; a
+  snippet you are about to run once is the opposite, and `%TEMP%` is the one
+  place Windows already cleans up. See ARCHITECTURE #13.
+- **UTF-8 with BOM.** A pasted snippet is as likely to be meant for Windows
+  PowerShell as for pwsh, and 5.1 reads a BOM-less file as ANSI. The BOM is what
+  makes the file mean the same thing in both hosts; a scratch file has nothing
+  to lose by carrying one.
+- **The substitution table is written as code points.** Two traps, both found by
+  the tests rather than by reading:
+  - the first draft's escape sequences for the curly quotes reached disk as the
+    literal characters, so a file whose entire purpose was repairing smart
+    quotes had quietly become full of them — and it still parsed. The design
+    record you are reading had the same thing happen to its account of it;
+  - on an OrderedDictionary an `[int]` indexer is a *position*, not a key, so
+    `[ordered]@{ 0x2018 = "'" }[0x2018]` is element 8216 — `$null`, no error —
+    while `.Contains(0x2018)` still answers `$true`, which reads as "the
+    character was deleted" rather than "the lookup missed". (A plain `@{}`
+    keys correctly; the list was kept for reading order.)
+
+  Hence a list of `{ From = 0x2018; To = "'" }` pairs walked with
+  `String.Replace`: ASCII source, reviewable table, no comparer semantics.
+
+**Not done, deliberately:** no `-Run`. A switch that runs the snippet without
+reading it undoes the reason the command exists.
+
+**Open:** no screenshot yet — the README's shot list needs one captured from a
+throwaway account per [`docs/screenshots/CAPTURE-GUIDE.md`](docs/screenshots/CAPTURE-GUIDE.md).
+
+---

@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://haakonwibe.github.io/pwsh-toolkit/poster.html">
-    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 70 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
+    <img src="docs/screenshots/poster.png" alt="pwsh-toolkit at-a-glance poster — 71 commands wired up through one declarative config: folder jumper, archive peek, JSON viewer, disk-free overview, winget picker, and more" width="900">
   </a>
 </p>
 <p align="center">
@@ -71,6 +71,7 @@ After an OMP install, set your terminal font to a Meslo Nerd Font variant — **
 | **`dird` / `fr`** | Directory listings with the AI descriptions from `tagdl`, color-coded by extension and bucket. `dird` is alphabetical; `fr` is newest-first ("filelisting reverse" — BBS-style paging). |
 | **`recent`** | The "where did that file just go" view: the newest files across Downloads + Desktop (machine files can add folders) in one picker — age, name, source folder, and the `tagdl` description when one exists. Enter opens with the default app; archives are handed to `peek` instead. `recent 50` for a deeper list. |
 | **`cb`** | Clipboard snippet stash — the text you paste often (signature, address, a gnarly command), named and searchable, surviving reboots: what Win+V can't be. `cb -Add -Label sig` stashes the current clipboard under a name (upsert by label; identical text de-dupes); `cb` opens a picker and Enter copies the selection back to the clipboard; `cb <text>` copies the first label/content match directly; `cb -Remove <text>` drops one by label or content. Persisted as plaintext JSON under `%LOCALAPPDATA%` (labeled favorites are never auto-trimmed). Not a secret store — keep passwords in SecretStore. |
+| **`psnip`** | Safe paste for a multi-line snippet: writes the clipboard to a timestamped `.ps1` under `%TEMP%\pwsh-snips` and opens it in a new VS Code window (Notepad if VS Code isn't installed), so you read it before any of it runs. Pasting the same text at the prompt is what this replaces — a clipboard ending in a newline submits itself before you can look at it, several top-level statements execute as they land, and characters rendered HTML substitutes for ASCII (curly quotes, non-breaking spaces, an en dash in front of a parameter) parse as something other than what they look like. `psnip -Repair` fixes that last class on the way to the file. Its own window (`code -n`) keeps unreviewed code out of the window that already trusts your project, and leaves VS Code free to open it in Restricted Mode; the trust prompt is deliberately not suppressed. The dot-source line is printed, copied and added to history, so running it is Up + Enter — dot-sourced, so a snippet that defines functions keeps them. `psnip -List` shows the captures still on disk and `psnip -Clean` wipes them, as with `peek`. |
 | **`apps` / `uninst`** | Installed-application inventory and removal, from the terminal. `apps` lists exactly what Control Panel's Programs and Features shows — same three registry hives, same visibility rules — as objects you can filter (`apps firefox`, `apps -Publisher Mozilla`, `apps \| Sort SizeMB -Desc`). Each app carries a `Silent` flag: whether it can be removed unattended. `uninst` opens a picker over the list and runs the selected app's uninstaller; `uninst <name>` matches by substring. `-Silent` uses the publisher's quiet command or MSI's `/qn` — and tells you when neither exists rather than guessing a switch the installer may not understand. Confirms before removing (`-WhatIf` prints the exact command line, `-Confirm:$false` scripts it). Deliberately a registry read: `Win32_Product` triggers an MSI self-repair on every product just to enumerate, and `Get-Package -ProviderName Programs` returns nothing under PS7. MSIX/Store apps aren't included — Windows keeps them out of Programs and Features too. |
 | **`json`** | View JSON with syntax highlighting — `json <file.json>`, a piped JSON string (`gh api … \| json`), or any piped object (serialized first) — which makes it the readable way through a deep Graph object, where `Get-IntuneWin32AppDetail \| json` shows nested detection rules and assignments that `Format-List` flattens into noise. Minified JSON is reflowed to indented form; `-Raw` shows the text verbatim (preserving JSONC comments + layout). Emits clean, uncolored JSON when redirected (`json x.json > pretty.json`), so it doubles as a formatter. |
 | **`Get-PubIP`** | Public IPv4 and IPv6 with multiple service fallbacks. |
@@ -239,6 +240,8 @@ Set-SecretStoreConfiguration -Authentication Password
 
 Existing vaults aren't touched — the default only applies on first-time vault creation. To change an already-configured vault, use the command above (with the current password if there is one).
 
+**Pasted code gets read before it runs.** `psnip` exists because pasting a multi-line snippet at the prompt is the one everyday operation that executes code you haven't finished looking at: a clipboard ending in a newline submits itself, several top-level statements run as they land, and characters rendered HTML substitutes for ASCII parse as something other than what they appear to be. It writes the clipboard to a scratch `.ps1`, opens it in its own VS Code window so an unreviewed snippet never enters the window that already trusts your project, and hands back a dot-source line you run once you're satisfied. The Workspace Trust prompt is deliberately not suppressed — `%TEMP%\pwsh-snips` is the one folder that should never be trusted.
+
 ## Connecting to remote hosts
 
 `rdp` and `rps` are thin wrappers — the targets still need the right server-side bits enabled. Quick reference:
@@ -296,7 +299,7 @@ Test-WSMan target                          # WinRM actually responding?
 - **[`Profiles/Hosts/README.md`](Profiles/Hosts/README.md)** — per-host configuration examples
 - **[`docs/how-eval.md`](docs/how-eval.md)** — how `how`'s model, candidate count and prompt were chosen, and the measurements behind them
 - **[`CHANGELOG.md`](CHANGELOG.md)** — release history
-- **[`IDEAS.md`](IDEAS.md)** — the design record for candidate helpers (shipped: `prj`, `recent`, `cb`; shelved: `gcm`)
+- **[`IDEAS.md`](IDEAS.md)** — the design record for candidate helpers (shipped: `prj`, `recent`, `cb`, `psnip`; shelved: `gcm`)
 
 ## Future direction
 

@@ -34,7 +34,7 @@ BeforeAll {
     . (Join-Path $commonDir 'Aliases.ps1')        # touch, which, ll, la, ask
     . (Join-Path $commonDir 'Navigation.ps1')     # mkcd, up
     . (Join-Path $commonDir 'Recent.ps1')         # Get-RecentFile, Format-FileAge (needs Navigation's $script:OneDrivePath)
-    . (Join-Path $commonDir 'Clipboard.ps1')      # cb + snippet helpers (renders age via Recent's Format-FileAge)
+    . (Join-Path $commonDir 'Clipboard.ps1')      # cb, psnip + snippet helpers (age via Recent's Format-FileAge, psnip's hint via How's Out-HowCommand)
     . (Join-Path $commonDir 'Peek.ps1')           # Get-PeekTool + exe finders
     . (Join-Path $commonDir 'RemoteServers.ps1')  # Format-RemoteServerDisplay, Get-RemoteServerByMatch
     . (Join-Path $commonDir 'Picker.ps1')         # Get-PickerScrollTop
@@ -1360,6 +1360,330 @@ Describe 'cb tab completion' {
 
     It 'does not throw on wildcard metacharacters in the word' {
         { & $script:ClipLabelCompleter 'cb' 'Match' '[' $null @{} } | Should -Not -Throw
+    }
+}
+
+Describe 'Repair-SnippetText (psnip -Repair)' {
+
+    It 'turns curly quotes back into ASCII quotes' {
+        # The failure this exists for: PowerShell reads a curly quote as an
+        # ordinary character, so the "string" it looks like it opens never opens.
+        Repair-SnippetText ([char]0x201C + 'hello' + [char]0x201D) | Should -Be '"hello"'
+        Repair-SnippetText ([char]0x2018 + 'hi' + [char]0x2019)    | Should -Be "'hi'"
+    }
+
+    It 'turns a non-breaking space into a real space' {
+        # Get-Process<NBSP>-Name is one token, hence one unknown command name.
+        $nbsp = [char]0x00A0
+        Repair-SnippetText "Get-Process${nbsp}-Name pwsh" | Should -Be 'Get-Process -Name pwsh'
+    }
+
+    It 'turns an en dash parameter prefix back into a hyphen' {
+        # What copying out of Word or a blog post does to -Force.
+        Repair-SnippetText ('Remove-Item x ' + [char]0x2013 + 'Force') | Should -Be 'Remove-Item x -Force'
+    }
+
+    It 'strips zero-width characters' {
+        $zwsp = [char]0x200B
+        Repair-SnippetText "Get-${zwsp}Date" | Should -Be 'Get-Date'
+    }
+
+    It 'strips bidi controls, which change what is seen rather than what parses' {
+        # A right-to-left override makes the editor draw a line in an order the
+        # parser never uses - the one substitution that defeats "read it first".
+        $rlo = [char]0x202E
+        Repair-SnippetText "abc${rlo}def" | Should -Be 'abcdef'
+        Repair-SnippetText ('x' + [char]0x2066 + 'y' + [char]0x2069) | Should -Be 'xy'
+    }
+
+    It 'turns a minus sign and an em space back into ASCII' {
+        Repair-SnippetText ('Remove-Item x ' + [char]0x2212 + 'Force') | Should -Be 'Remove-Item x -Force'
+        Repair-SnippetText ('Get-Process' + [char]0x2003 + '-Name pwsh') | Should -Be 'Get-Process -Name pwsh'
+    }
+
+    It 'leaves clean ASCII untouched' {
+        $clean = "function f {`n    'ok'`n}"
+        Repair-SnippetText $clean | Should -Be $clean
+    }
+
+    It 'returns empty input unchanged rather than throwing' {
+        { Repair-SnippetText '' }   | Should -Not -Throw
+        { Repair-SnippetText $null } | Should -Not -Throw
+    }
+}
+
+Describe 'Get-SnippetScratchPath' {
+
+    BeforeEach {
+        $script:snipTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("snip-ut-" + [Guid]::NewGuid().ToString('N'))
+    }
+    AfterEach {
+        Remove-Item -LiteralPath $script:snipTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'creates the scratch folder if it is missing' {
+        $null = Get-SnippetScratchPath -Root $script:snipTestRoot
+        Test-Path -LiteralPath $script:snipTestRoot | Should -BeTrue
+    }
+
+    It 'names the file from an invariant, sortable stamp' {
+        $p = Get-SnippetScratchPath -Now ([datetime]'2026-09-20 14:30:07') -Root $script:snipTestRoot
+        Split-Path $p -Leaf | Should -Be 'snip-20260920-143007.ps1'
+    }
+
+    It 'never returns a path that already exists (same-second collision)' {
+        # Second resolution collides when psnip runs twice quickly; the second
+        # call must not hand back the file the first one just opened.
+        $now = [datetime]'2026-09-20 14:30:07'
+        $a = Get-SnippetScratchPath -Now $now -Root $script:snipTestRoot
+        Set-Content -LiteralPath $a -Value 'first'
+        $b = Get-SnippetScratchPath -Now $now -Root $script:snipTestRoot
+        $b | Should -Not -Be $a
+        Split-Path $b -Leaf | Should -Be 'snip-20260920-143007-2.ps1'
+    }
+
+    It 'keeps the stamp invariant under a comma-decimal culture' {
+        # Same class of bug as cb's timestamps: Get-Date -Format inserts
+        # culture-specific separators, and this one lands in a file name.
+        $orig = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = [cultureinfo]'nb-NO'
+            $p = Get-SnippetScratchPath -Now ([datetime]'2026-09-20 14:30:07') -Root $script:snipTestRoot
+            Split-Path $p -Leaf | Should -Be 'snip-20260920-143007.ps1'
+        } finally {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = $orig
+        }
+    }
+}
+
+Describe 'Get-SnippetEditor' {
+
+    BeforeEach { $script:savedSnipEditor = $script:SnipEditor; $script:SnipEditor = $null }
+    AfterEach  { $script:SnipEditor = $script:savedSnipEditor }
+
+    It 'always resolves to something runnable' {
+        Get-SnippetEditor | Should -Not -BeNullOrEmpty
+    }
+
+    It 'falls back to Notepad when VS Code is nowhere to be found' {
+        Mock Get-Command { } -ParameterFilter { $Name -eq 'code' }
+        Mock Test-Path   { $false } -ParameterFilter { $LiteralPath -like '*Microsoft VS Code*' }
+        Get-SnippetEditor | Should -Be 'notepad.exe'
+    }
+
+    It 'caches the resolved editor instead of probing again' {
+        # A Get-Command miss costs ~70 ms; psnip is run repeatedly in a session.
+        $script:SnipEditor = 'C:\fake\editor.exe'
+        Mock Test-Path   { $true } -ParameterFilter { $LiteralPath -eq 'C:\fake\editor.exe' }
+        Mock Get-Command { throw 'should not probe when cached' } -ParameterFilter { $Name -eq 'code' }
+        Get-SnippetEditor | Should -Be 'C:\fake\editor.exe'
+    }
+
+    It 'drops a cached editor that has gone missing and falls back' {
+        # VS Code uninstalled, or its updater briefly swapping bin\code.cmd: the
+        # next call must re-resolve, not fail every call until a new shell.
+        $script:SnipEditor = 'C:\gone\code.cmd'
+        Mock Get-Command { } -ParameterFilter { $Name -eq 'code' }
+        # Unfiltered on purpose: it must answer the cache re-validation AND the
+        # two install-root probes, and a mocked cmdlet with only filtered mocks
+        # throws on any call none of them match.
+        Mock Test-Path   { $false }
+        Get-SnippetEditor | Should -Be 'notepad.exe'
+    }
+}
+
+Describe 'Start-SnippetEditor' {
+
+    BeforeEach { $script:savedSnipEditor = $script:SnipEditor }
+    AfterEach  { $script:SnipEditor = $script:savedSnipEditor }
+
+    It 'warns and returns false rather than throwing when the editor is missing' {
+        # By this point the snippet is already on disk; failing to open it is
+        # an inconvenience, and psnip prints the path regardless.
+        Mock Get-SnippetEditor { 'C:\nope\missing-editor-xyz.exe' }
+        { Start-SnippetEditor -Path 'C:\some\file.ps1' 6>$null } | Should -Not -Throw
+        (Start-SnippetEditor -Path 'C:\some\file.ps1' 6>$null)  | Should -BeFalse
+    }
+}
+
+Describe 'psnip (clipboard -> scratch file)' {
+
+    BeforeEach {
+        $script:snipTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("psnip-ut-" + [Guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType Directory -Path $script:snipTestRoot -Force
+        $script:written = $null
+        # Keep the test off the real editor, the real %TEMP%\pwsh-snips, and the
+        # dev's clipboard/history: psnip's own I/O is what's under test. The
+        # production root is redirected EXPLICITLY - variable names are
+        # case-insensitive, so a test variable spelled $script:snipRoot would
+        # silently be the production $script:SnipRoot, and the -Clean test
+        # below would only miss the real tree by accident.
+        $script:savedSnipRoot = $script:SnipRoot
+        $script:SnipRoot      = $script:snipTestRoot
+        Mock Get-SnippetScratchPath { Join-Path $script:snipTestRoot 'snip-test.ps1' }
+        Mock Start-SnippetEditor    { $true }
+        Mock Out-HowCommand         { $script:written = $Command }
+    }
+    AfterEach {
+        Remove-Item -LiteralPath $script:snipTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+        $script:SnipRoot = $script:savedSnipRoot
+    }
+
+    It 'writes the clipboard to the scratch file verbatim' {
+        Mock Get-Clipboard { "function f {`n    'body'`n}" }
+        psnip 6>$null
+        $path = Join-Path $script:snipTestRoot 'snip-test.ps1'
+        (Get-Content -Raw -LiteralPath $path).TrimEnd("`r", "`n") | Should -Be "function f {`n    'body'`n}"
+    }
+
+    It 'writes the file with a BOM so 5.1 and 7 read it the same way' {
+        Mock Get-Clipboard { "'ae oe aa'" }
+        psnip 6>$null
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $script:snipTestRoot 'snip-test.ps1'))
+        $bytes[0..2] | Should -Be @(0xEF, 0xBB, 0xBF)
+    }
+
+    It 'offers a DOT-SOURCE line, not a call (functions must survive)' {
+        # `& <path>` would define the snippet's functions in a child scope and
+        # lose them on return - the whole point of pasting most snippets.
+        Mock Get-Clipboard { 'function f { }' }
+        psnip 6>$null
+        $script:written | Should -BeLike ". '*snip-test.ps1'"
+    }
+
+    It 'writes nothing when the clipboard is empty' {
+        Mock Get-Clipboard { '   ' }
+        psnip 6>$null
+        Test-Path -LiteralPath (Join-Path $script:snipTestRoot 'snip-test.ps1') | Should -BeFalse
+    }
+
+    It 'writes nothing when the clipboard is not text (Get-Clipboard throws)' {
+        # An image or an Explorer file drop - the guard cb -Add already carries.
+        Mock Get-Clipboard { throw 'clipboard does not contain text' }
+        { psnip 6>$null } | Should -Not -Throw
+        Test-Path -LiteralPath (Join-Path $script:snipTestRoot 'snip-test.ps1') | Should -BeFalse
+    }
+
+    It 'leaves typographic characters alone without -Repair' {
+        Mock Get-Clipboard { [char]0x201C + 'x' + [char]0x201D }
+        psnip 6>$null
+        Get-Content -Raw -LiteralPath (Join-Path $script:snipTestRoot 'snip-test.ps1') | Should -Match ([char]0x201C)
+    }
+
+    It 'repairs them with -Repair' {
+        Mock Get-Clipboard { [char]0x201C + 'x' + [char]0x201D }
+        psnip -Repair 6>$null
+        $raw = Get-Content -Raw -LiteralPath (Join-Path $script:snipTestRoot 'snip-test.ps1')
+        $raw   | Should -Match '"x"'
+        $raw   | Should -Not -Match ([char]0x201C)
+    }
+
+    It 'captures the file before the editor is touched' {
+        # Ordering matters: a broken editor must cost a warning, never the
+        # snippet. Start-SnippetEditor sees the file already on disk.
+        Mock Get-Clipboard { 'Get-Date' }
+        $script:existedAtLaunch = $false
+        Mock Start-SnippetEditor { $script:existedAtLaunch = Test-Path -LiteralPath $Path; $true }
+        psnip 6>$null
+        $script:existedAtLaunch | Should -BeTrue
+    }
+
+    It 'leaves the clipboard alone when the write fails' {
+        # The clipboard is the only copy of the snippet. A Set-Content failure
+        # is non-terminating by default, and sailing past it would hand back a
+        # dot-source line for a file that doesn't exist - and replace the
+        # clipboard with it.
+        Mock Get-Clipboard          { 'Get-Date' }
+        Mock Get-SnippetScratchPath { Join-Path $script:snipTestRoot 'no-such-dir\snip-test.ps1' }
+        { psnip 6>$null } | Should -Not -Throw
+        Should -Not -Invoke Out-HowCommand
+        Should -Not -Invoke Start-SnippetEditor
+    }
+
+    It 'escapes an apostrophe in the path of the dot-source line' {
+        # C:\Users\O'Neil\... - the line is single-quoted, so the quote itself
+        # is the only character that needs doubling, and it must be.
+        $script:apostropheDir = Join-Path $script:snipTestRoot "o'neil"
+        $null = New-Item -ItemType Directory -Path $script:apostropheDir -Force
+        Mock Get-Clipboard          { 'Get-Date' }
+        Mock Get-SnippetScratchPath { Join-Path $script:apostropheDir 'snip-test.ps1' }
+        psnip 6>$null
+        $expected = Join-Path $script:apostropheDir 'snip-test.ps1'
+        $script:written | Should -Be ". '$($expected.Replace("'", "''"))'"
+        # And what it hands back actually parses as one statement.
+        $tokens = $null; $errors = $null
+        $null = [System.Management.Automation.Language.Parser]::ParseInput($script:written, [ref]$tokens, [ref]$errors)
+        $errors | Should -BeNullOrEmpty
+    }
+
+    It 'does not count a trailing newline as a line' {
+        # The exact clipboard shape psnip exists for: rendered-text copies end
+        # in a newline, and "3 lines" for a two-line snippet would be wrong.
+        Mock Get-Clipboard { "Get-Date`r`nGet-Host`r`n" }
+        $out = psnip 6>&1 | Out-String
+        $out | Should -Match '\b2 lines\b'
+    }
+
+    It 'never captures the clipboard on -List or -Clean' {
+        # The parameter sets are mutually exclusive, so a management switch must
+        # not also stash whatever happened to be on the clipboard.
+        Mock Get-Clipboard { 'Get-Date' }
+        psnip -List  6>$null
+        psnip -Clean 6>$null
+        Should -Not -Invoke Get-Clipboard
+    }
+}
+
+Describe 'psnip -List / -Clean (scratch tree management)' {
+
+    BeforeEach {
+        $script:savedSnipRoot = $script:SnipRoot
+        $script:SnipRoot = Join-Path ([IO.Path]::GetTempPath()) ("psniproot-ut-" + [Guid]::NewGuid().ToString('N'))
+    }
+    AfterEach {
+        Remove-Item -LiteralPath $script:SnipRoot -Recurse -Force -ErrorAction SilentlyContinue
+        $script:SnipRoot = $script:savedSnipRoot
+    }
+
+    It 'reports an empty tree rather than throwing' {
+        { psnip -List  6>$null } | Should -Not -Throw
+        { psnip -Clean 6>$null } | Should -Not -Throw
+    }
+
+    It 'lists a capture by name and first line' {
+        $null = New-Item -ItemType Directory -Path $script:SnipRoot -Force
+        Set-Content -LiteralPath (Join-Path $script:SnipRoot 'snip-20260920-143007.ps1') `
+                    -Value "`n# leading blank line`nGet-Date"
+        $out = psnip -List 6>&1 | Out-String
+        $out | Should -Match 'snip-20260920-143007\.ps1'
+        $out | Should -Match '# leading blank line'     # Format-SnippetPreview: first NON-BLANK line
+    }
+
+    It 'ignores files that are not captures' {
+        $null = New-Item -ItemType Directory -Path $script:SnipRoot -Force
+        Set-Content -LiteralPath (Join-Path $script:SnipRoot 'notes.txt') -Value 'unrelated'
+        (psnip -List 6>&1 | Out-String) | Should -Not -Match 'notes\.txt'
+    }
+
+    It 'wipes the tree with -Clean' {
+        $null = New-Item -ItemType Directory -Path $script:SnipRoot -Force
+        Set-Content -LiteralPath (Join-Path $script:SnipRoot 'snip-x.ps1') -Value 'Get-Date'
+        psnip -Clean 6>$null
+        Test-Path -LiteralPath $script:SnipRoot | Should -BeFalse
+    }
+
+    It 'survives a locked capture instead of throwing' {
+        # A snippet still open in an editor is the ordinary case for this
+        # failing; it must report, not blow up the shell.
+        $null = New-Item -ItemType Directory -Path $script:SnipRoot -Force
+        $locked = Join-Path $script:SnipRoot 'snip-locked.ps1'
+        Set-Content -LiteralPath $locked -Value 'Get-Date'
+        $handle = [IO.File]::Open($locked, 'Open', 'Read', 'None')
+        try {
+            { psnip -Clean 6>$null } | Should -Not -Throw
+        } finally {
+            $handle.Dispose()
+        }
     }
 }
 

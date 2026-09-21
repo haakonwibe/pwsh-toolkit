@@ -46,6 +46,7 @@ $script:ToolkitInternalCommands = @(
     'Get-ToolkitDataPath', 'ConvertTo-ProfileLoadSummary'
     'Get-RecentFile', 'Format-FileAge', 'Get-FileDizDescription'
     'Convert-SnippetDate', 'ConvertTo-SnippetStamp', 'Format-SnippetPreview', 'Get-ClipSnippet', 'Save-ClipSnippet', 'Limit-ClipSnippet', 'Add-ClipSnippet', 'Remove-ClipSnippet'
+    'Repair-SnippetText', 'Get-SnippetScratchPath', 'Get-SnippetEditor', 'Start-SnippetEditor', 'Show-SnippetScratch', 'Clear-SnippetScratch'
     'Get-PeekRarExe', 'Get-Peek7zExe', 'Get-PeekTool'
     'Test-NativeSudoEnabled', 'Get-SudoExe', 'Import-DeferredTerminalIcon'
     'Test-ArpEntryVisible', 'Split-UninstallCommand', 'Resolve-UninstallCommand'
