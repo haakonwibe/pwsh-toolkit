@@ -2702,6 +2702,12 @@ Describe 'Get-InstalledApp (against the live registry)' {
     It '-SilentOnly returns only unattended-capable apps' {
         foreach ($a in Get-InstalledApp -SilentOnly) { $a.Silent | Should -BeTrue }
     }
+    It 'renders as a table by default, not a per-app list' {
+        # A table has one header row; a list repeats "Name :" per object.
+        $text = @($installed)[0..1] | Out-String -Width 250
+        $text | Should -Match '(?m)^Name\s+Version\s+Publisher\s+Silent\s*$'
+        $text | Should -Not -Match '(?m)^Name\s+:'
+    }
 }
 
 Describe 'Get-OrCreateSecret (mocked vault)' {

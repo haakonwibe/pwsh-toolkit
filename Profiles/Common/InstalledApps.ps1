@@ -357,9 +357,11 @@ function Get-InstalledApp {
         # Without this the console renders 12 properties as a per-object List,
         # which is unreadable across ~150 apps. A default display set keeps the
         # object rich for scripting while `apps` alone stays a legible table.
+        # At most four: PowerShell renders a display set of five or more as a
+        # List too. Scope stays on the object (apps | ft Name, Scope).
         $app | Add-Member -MemberType MemberSet -Name PSStandardMembers -Value ([System.Management.Automation.PSMemberInfo[]]@(
             [System.Management.Automation.PSPropertySet]::new(
-                'DefaultDisplayPropertySet', [string[]]@('Name', 'Version', 'Publisher', 'Scope', 'Silent'))
+                'DefaultDisplayPropertySet', [string[]]@('Name', 'Version', 'Publisher', 'Silent'))
         ))
         $app
     }
