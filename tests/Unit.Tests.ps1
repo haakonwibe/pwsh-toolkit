@@ -52,7 +52,7 @@ BeforeAll {
     . (Join-Path $commonDir 'InstalledApps.ps1')   # Test-ArpEntryVisible, Split-UninstallCommand, Resolve-UninstallCommand
     . (Join-Path $repoRoot 'Profiles/M365/IntuneManagement.ps1')  # Get-ComplianceBucket, ConvertTo-IntuneDashboardHtml (defining these needs no Graph)
     . (Join-Path $repoRoot 'Profiles/M365/IntuneWin32Apps.ps1')   # Get-IntuneWin32App, Get-IntuneWin32AppContentInfo (mocked below)
-    . (Join-Path $repoRoot 'Profiles/M365/IntuneAssignments.ps1') # Get-IntuneGroupAssignment (mocked below)
+    . (Join-Path $repoRoot 'Profiles/M365/IntuneAssignments.ps1') # Get-IntuneAssignment (mocked below)
 }
 
 Describe 'touch' {
@@ -2118,7 +2118,7 @@ Describe 'Intune Win32 app content info (mocked Graph)' {
     }
 }
 
-Describe 'Intune group assignments (mocked Graph)' {
+Describe 'Intune assignments (mocked Graph)' {
 
     BeforeAll {
         # Same stub-then-mock pattern as the overview-data suite above.
@@ -2130,19 +2130,47 @@ Describe 'Intune group assignments (mocked Graph)' {
         Mock Invoke-MgGraphRequest {
             # g = the group under test, p = a group it belongs to, o = some
             # other group, au = an administrative unit it's also in.
+            # Pat (pat@contoso.com) is in p and o; LAPTOP-1 is in g and p.
             $g  = 'aaaaaaaa-0000-0000-0000-000000000001'
             $p  = 'bbbbbbbb-0000-0000-0000-000000000002'
             $o  = 'cccccccc-0000-0000-0000-000000000003'
             $au = 'dddddddd-0000-0000-0000-000000000004'
             $inc = '#microsoft.graph.groupAssignmentTarget'
             $exc = '#microsoft.graph.exclusionGroupAssignmentTarget'
+            $grp = '#microsoft.graph.group'
+            $laptop   = @{ id = 'eeeeeeee-0000-0000-0000-000000000005'; displayName = 'LAPTOP-1'; approximateLastSignInDateTime = '2026-11-01T08:00:00Z' }
+            $notFound = 'Response status code does not indicate success: NotFound (Not Found).'
             # Every case breaks: switch runs EVERY matching case, and the
             # per-item URIs also match their collection's pattern.
             switch -Wildcard ($Uri) {
-                '*transitiveMemberOf*' { @{ value = @(
-                    @{ '@odata.type' = '#microsoft.graph.group'; id = $p; displayName = 'All Pilots' }
+                '*groups/*/transitiveMemberOf*' { @{ value = @(
+                    @{ '@odata.type' = $grp; id = $p; displayName = 'All Pilots' }
                     @{ '@odata.type' = '#microsoft.graph.administrativeUnit'; id = $au; displayName = 'Oslo' }
                 ) }; break }
+                '*users/*/transitiveMemberOf*' { @{ value = @(
+                    @{ '@odata.type' = $grp; id = $p; displayName = 'All Pilots' }
+                    @{ '@odata.type' = $grp; id = $o; displayName = 'Other' }
+                ) }; break }
+                '*devices/*/transitiveMemberOf*' { @{ value = @(
+                    @{ '@odata.type' = $grp; id = $g; displayName = 'Pilot Devices' }
+                    @{ '@odata.type' = $grp; id = $p; displayName = 'All Pilots' }
+                ) }; break }
+                '*v1.0/users/*' {
+                    if ($Uri -like '*pat%40contoso.com*') { @{ id = '77777777-0000-0000-0000-000000000007'; displayName = 'Pat Pilot'; userPrincipalName = 'pat@contoso.com' } }
+                    else { throw $notFound }
+                    break }
+                # 1111... is LAPTOP-1's Intune device id; ffff... its Entra device id.
+                '*managedDevices/*' {
+                    if ($Uri -like '*11111111-0000*') { @{ azureADDeviceId = 'ffffffff-0000-0000-0000-000000000006' } } else { throw $notFound }
+                    break }
+                '*v1.0/devices/*' { if ($Uri -like '*eeeeeeee-0000*') { $laptop } else { throw $notFound }; break }
+                '*v1.0/devices`?*' {
+                    if ($Uri -like '*LAPTOP-1*' -or $Uri -like '*ffffffff-0000*') { @{ value = @($laptop) } }
+                    elseif ($Uri -like '*TWIN-PC*') { @{ value = @(
+                        @{ id = 'eeeeeeee-0000-0000-0000-000000000005'; displayName = 'TWIN-PC'; approximateLastSignInDateTime = '2026-11-01T08:00:00Z' }
+                        @{ id = '99999999-0000-0000-0000-000000000009'; displayName = 'TWIN-PC' }) } }
+                    else { @{ value = @() } }
+                    break }
                 '*v1.0/groups/*'   { @{ displayName = 'Pilot Devices' }; break }
                 '*v1.0/groups*'    {
                     if ($Uri -like '*Pilot*')    { @{ value = @(@{ id = $g; displayName = 'Pilot Devices' }) } }
@@ -2170,6 +2198,9 @@ Describe 'Intune group assignments (mocked Graph)' {
                     @{ id = 'e1'; displayName = 'Pilot ESP'; deviceEnrollmentConfigurationType = 'windows10EnrollmentCompletionPageConfiguration'
                        assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }
                 ) }; break }
+                '*windowsQualityUpdatePolicies*' { @{ value = @(
+                    @{ id = 'q1'; displayName = 'Hotpatch ring'; assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }
+                ) }; break }
                 '*deviceHealthScripts*' { @{ value = @(
                     @{ id = 'r1'; displayName = 'Clear temp'; assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $p } }) }
                     @{ id = 'r2'; displayName = 'Fix VPN';    assignments = @(@{ target = @{ '@odata.type' = $exc; groupId = $p } }) }
@@ -2194,32 +2225,33 @@ Describe 'Intune group assignments (mocked Graph)' {
     }
 
     It 'keeps only direct include and exclude assignments of the group' {
-        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
+        $rows = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
         # Not the other group's Wi-Fi assignment, All devices, the scope-tag
         # target, or anything that comes through the parent group.
-        $rows.Count | Should -Be 10
-        @($rows | Where-Object Assignment -EQ 'Include').Count | Should -Be 8
+        $rows.Count | Should -Be 11
+        @($rows | Where-Object Assignment -EQ 'Include').Count | Should -Be 9
         @($rows | Where-Object Assignment -EQ 'Exclude').Name | Should -Be @('7-Zip', 'VPN')
         $rows.Name | Should -Not -Contain 'Kiosk'
         $rows.Name | Should -Not -Contain 'Scoped'
         $rows.Name | Should -Not -Contain 'Clear temp'
-        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 8 included, 2 excluded' }
+        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 9 included, 2 excluded' }
         Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*transitiveMemberOf*' }
     }
 
     It 'labels the kinds a surface holds, falling back to the surface' {
-        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
+        $rows = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
         $typeOf = { param($n) ($rows | Where-Object Name -EQ $n).Type }
         & $typeOf 'Ring 1'    | Should -Be 'Update ring'
         & $typeOf 'Wi-Fi'     | Should -Be 'Device configuration'
         & $typeOf 'BitLocker' | Should -Be 'Endpoint security (Disk encryption)'
         & $typeOf 'Edge'      | Should -Be 'Settings catalog'
         & $typeOf 'Pilot ESP' | Should -Be 'Enrollment status page'
+        & $typeOf 'Hotpatch ring' | Should -Be 'Quality update policy'
     }
 
     It 'adds what comes through a parent group with -Inherited, marked with the parent' {
-        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -Inherited -WarningAction SilentlyContinue)
-        $rows.Count | Should -Be 12
+        $rows = @(Get-IntuneAssignment 'Pilot Devices' -Inherited -WarningAction SilentlyContinue)
+        $rows.Count | Should -Be 13
         $clear = $rows | Where-Object Name -EQ 'Clear temp'
         $clear.Assignment | Should -Be 'Include (via All Pilots)'
         $clear.Group      | Should -Be 'All Pilots'
@@ -2228,62 +2260,103 @@ Describe 'Intune group assignments (mocked Graph)' {
         ($rows | Where-Object Name -EQ 'VPN').Group | Should -Be 'Pilot Devices'   # direct rows unchanged
         $rows.Name | Should -Not -Contain 'AU only'   # an administrative unit isn't a parent group
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
-            "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 9 included, 3 excluded (2 inherited); not listed: 1 to All users, 1 to All devices' }
+            "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 10 included, 3 excluded (2 inherited); not listed: 1 to All users, 1 to All devices' }
     }
 
     It 'falls back to direct assignments when the parent groups cannot be read' {
         Mock Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*transitiveMemberOf*' } { throw 'Forbidden' }
-        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -Inherited -WarningAction SilentlyContinue -WarningVariable w)
-        $rows.Count | Should -Be 10
+        $rows = @(Get-IntuneAssignment 'Pilot Devices' -Inherited -WarningAction SilentlyContinue -WarningVariable w)
+        $rows.Count | Should -Be 11
         "$w" | Should -BeLike "*Couldn't read the groups Pilot Devices belongs to*"
     }
 
+    It 'lists what reaches a user: through their groups, and All users' {
+        $rows = @(Get-IntuneAssignment -User pat@contoso.com -WarningAction SilentlyContinue)
+        $rows.Count | Should -Be 4
+        ($rows | Where-Object Name -EQ 'Clear temp').Assignment | Should -Be 'Include (via All Pilots)'
+        ($rows | Where-Object Name -EQ 'Fix VPN').Assignment    | Should -Be 'Exclude (via All Pilots)'
+        ($rows | Where-Object Name -EQ 'Wi-Fi').Assignment      | Should -Be 'Include (via Other)'
+        $portal = $rows | Where-Object Name -EQ 'Company Portal'
+        $portal.Assignment | Should -Be 'Include (All users)'
+        $portal.Group      | Should -Be 'All users'
+        $portal.GroupId    | Should -BeNullOrEmpty
+        $rows.Name | Should -Not -Contain 'Kiosk'   # All devices doesn't reach a user
+        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
+            "$Object" -eq 'Pat Pilot (pat@contoso.com): 3 included, 1 excluded (member of 2 groups)' }
+    }
+
+    It 'stops when the user cannot be found' {
+        { Get-IntuneAssignment -User nobody@contoso.com -ErrorAction Stop } | Should -Throw "*Couldn't find user 'nobody@contoso.com'*"
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like 'beta/*' }
+    }
+
+    It 'lists what reaches a device: through its groups, and All devices' {
+        $rows = @(Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue)
+        $rows.Count | Should -Be 14   # g's 11, p's 2, Kiosk
+        ($rows | Where-Object Name -EQ 'VPN').Assignment   | Should -Be 'Exclude (via Pilot Devices)'
+        ($rows | Where-Object Name -EQ 'Kiosk').Assignment | Should -Be 'Include (All devices)'
+        $rows.Name | Should -Not -Contain 'Company Portal'   # All users doesn't reach a device
+        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
+            "$Object" -eq 'LAPTOP-1 (eeeeeeee-0000-0000-0000-000000000005): 11 included, 3 excluded (member of 2 groups)' }
+    }
+
+    It 'finds a device by its Intune device id' {
+        $rows = @(Get-IntuneAssignment -Device '11111111-0000-0000-0000-000000000008' -WarningAction SilentlyContinue)
+        $rows.Count | Should -Be 14
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*devices/eeeeeeee-0000-0000-0000-000000000005/transitiveMemberOf' }
+    }
+
+    It 'stops with the candidate ids and last sign-ins when a device name is ambiguous' {
+        { Get-IntuneAssignment -Device TWIN-PC -ErrorAction Stop } |
+            Should -Throw '*eeeeeeee-0000-0000-0000-000000000005 (last sign-in 2026-11-01), 99999999-0000-0000-0000-000000000009 (last sign-in never)*'
+    }
+
     It 'reads assignments per item where the collection did not expand them' {
-        $null = Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue
+        $null = Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue
         Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*deviceManagementScripts/s1/assignments' }
         Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*intents/i1/assignments' }
         Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*intents?*expand*' }
     }
 
     It 'puts the app intent in Type and names the assignment filter' {
-        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
+        $rows = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
         @($rows | Where-Object Name -EQ '7-Zip').Type | Should -Be @('App (required)', 'App (uninstall)')
         ($rows | Where-Object Name -EQ 'BitLocker').Filter | Should -Be 'Windows 11 only (include)'
         ($rows | Where-Object Name -EQ 'VPN').Filter | Should -BeNullOrEmpty
     }
 
     It 'names a surface it could not read instead of skipping it silently' {
-        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue -WarningVariable w)
+        $rows = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue -WarningVariable w)
         "$w" | Should -BeLike '*Compliance (Response status code does not indicate success: Forbidden (Forbidden).)*'
-        $rows.Count | Should -Be 10   # the other surfaces still come back
+        $rows.Count | Should -Be 11   # the other surfaces still come back
     }
 
     It 'renders as a table by default (four display columns)' {
-        $row = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue)[0]
+        $row = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)[0]
         $row.PSStandardMembers.DefaultDisplayPropertySet.ReferencedPropertyNames | Should -Be @('Type', 'Name', 'Assignment', 'Filter')
     }
 
     It 'stops with the candidate ids when a display name is ambiguous' {
-        { Get-IntuneGroupAssignment 'Twin' -ErrorAction Stop } |
+        { Get-IntuneAssignment 'Twin' -ErrorAction Stop } |
             Should -Throw '*aaaaaaaa-0000-0000-0000-000000000001, cccccccc-0000-0000-0000-000000000003*'
         Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like 'beta/*' }
     }
 
     It 'escapes a name for both OData and the query string' {
-        { Get-IntuneGroupAssignment "O'Brien & Co" -ErrorAction Stop } | Should -Throw "*No group is named*"
+        { Get-IntuneAssignment "O'Brien & Co" -ErrorAction Stop } | Should -Throw "*No group is named*"
         Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*%27O%27%27Brien%20%26%20Co%27*' }
     }
 
     It 'takes an object id as-is, without a name search' {
-        $rows = @(Get-IntuneGroupAssignment 'AAAAAAAA-0000-0000-0000-000000000001' -WarningAction SilentlyContinue)
-        $rows.Count | Should -Be 10
+        $rows = @(Get-IntuneAssignment 'AAAAAAAA-0000-0000-0000-000000000001' -WarningAction SilentlyContinue)
+        $rows.Count | Should -Be 11
         $rows[0].Group | Should -Be 'Pilot Devices'
         Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*groups`?*' }   # `? = a literal ?, not the wildcard
     }
 
     It 'warns instead of throwing when not connected' {
         Mock Get-MgContext { $null }
-        @(Get-IntuneGroupAssignment 'Pilot Devices' 3>$null) | Should -BeNullOrEmpty
+        @(Get-IntuneAssignment 'Pilot Devices' 3>$null) | Should -BeNullOrEmpty
         Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It
     }
 }
