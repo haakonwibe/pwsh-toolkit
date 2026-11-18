@@ -3149,6 +3149,13 @@ Describe 'how (mocked Claude API)' {
         $src | Should -Match '::Replace\('
     }
 
+    It 'leaves PSReadLine alone when output is redirected' {
+        # No line editor to bind to, and finding out used to import PSReadLine:
+        # the load-time cost the smoke suite's 40% share check kept tripping on.
+        $how = Join-Path $commonDir 'How.ps1'
+        & pwsh -NoProfile -NoLogo -NonInteractive -Command ". '$how'; [bool](Get-Module PSReadLine)" | Should -Be 'False'
+    }
+
     It 'returns the command the picker selected' {
         Mock Get-HowApiKey { 'sk-test' }
         Mock Get-HowCandidate { @([pscustomobject]@{ command = 'Get-Date'; explanation = 'now' }) }

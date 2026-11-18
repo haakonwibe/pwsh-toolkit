@@ -466,7 +466,11 @@ function Out-HowCommand {
 # The chord. Inside a key handler the input buffer is live, so the line the user
 # typed can be swapped for the command they pick — the one place this works.
 # Registered only for a real console host; nothing else has a buffer to edit.
-if ($Host.Name -eq 'ConsoleHost' -and (Get-Command Set-PSReadLineKeyHandler -ErrorAction Ignore)) {
+# Redirected output means no line editor either, the same early-out PSReadLine.ps1
+# takes, and it's checked first: in such a process PSReadLine isn't loaded yet,
+# so the Get-Command lookup searches every module and imports it.
+if ($Host.Name -eq 'ConsoleHost' -and -not [Console]::IsOutputRedirected -and
+    (Get-Command Set-PSReadLineKeyHandler -ErrorAction Ignore)) {
     Set-PSReadLineKeyHandler -Chord $script:HowChord `
         -BriefDescription 'AskHow' `
         -LongDescription 'Ask Claude how to do what is on the line, and replace it with the chosen command.' `
