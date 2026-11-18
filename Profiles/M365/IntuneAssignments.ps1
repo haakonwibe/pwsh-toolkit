@@ -14,6 +14,8 @@ function Get-IntuneAssignment {
         a user or a device, and every assignable Intune surface is checked for
         assignments that include or exclude it. Prints one summary line with
         the include and exclude counts, then emits one row per assignment.
+        The table groups the rows under the group each one comes through,
+        with All users or All devices last.
 
         Surfaces read: device configuration profiles (update rings included),
         Settings Catalog (which also holds current endpoint security policies
@@ -32,26 +34,28 @@ function Get-IntuneAssignment {
         security (Antivirus) or Endpoint Privilege Management when that's what
         it is, an update ring reads Update ring rather than Device
         configuration, and an enrollment configuration reads Enrollment status
-        page, Enrollment restriction or Windows Hello for Business. App rows
-        carry their intent, so 'App (required)' and 'App (uninstall)' read
-        apart at a glance. Filter names the assignment filter that narrows a
-        row further.
+        page, Enrollment restriction, Windows Hello for Business or Windows
+        backup and restore. App rows name the app's kind and carry their
+        intent, so 'Win32 app (required)' and 'Store app (uninstall)' read
+        apart at a glance, as do two apps that share a name. Filter names the
+        assignment filter that narrows a row further.
 
         -Group lists direct assignments by default. -Inherited adds the
         assignments of every group this one belongs to, directly or further
-        up, since those reach its members too. Such rows read
-        'Include (via <parent>)' or 'Exclude (via <parent>)', and their Group
-        and GroupId name the parent. All users and All devices reach members
-        as well; -Inherited counts those in the summary line instead of
-        listing them, because in most tenants they would crowd out everything
-        else.
+        up, since those reach its members too. Such rows sit under their
+        parent's heading, and their Group and GroupId name the parent. All
+        users and All devices reach members as well; -Inherited counts those
+        in the summary line instead of listing them, because in most tenants
+        they would crowd out everything else.
 
         -User and -Device list what reaches that user or device: the
         assignments of every group it belongs to, directly or further up,
-        each read 'Include (via <group>)' or 'Exclude (via <group>)', plus
-        whatever goes to All users (for a user) or All devices (for a device).
-        That is targeting, not a verdict: an exclusion generally wins over an
-        inclusion, and an assignment filter can still rule a device out.
+        plus whatever goes to All users (for a user) or All devices (for a
+        device). When one policy both includes and excludes them through
+        different groups, the exclusion wins, and a second summary line names
+        those policies, since their rows sit under different headings.
+        Otherwise this is targeting, not a verdict: an assignment filter can
+        still rule a device out.
 
         A surface that can't be read (missing permission or license) is named
         in a warning rather than skipped silently, so an empty result means
@@ -88,7 +92,7 @@ function Get-IntuneAssignment {
 
         What reaches one user: through each of their groups, and All users.
     .EXAMPLE
-        Get-IntuneAssignment -Device LAPTOP-1 | Where-Object Assignment -Like 'Exclude*'
+        Get-IntuneAssignment -Device LAPTOP-1 | Where-Object Assignment -EQ 'Exclude'
 
         The exclusions that reach one device, and the groups they come through.
     .EXAMPLE
@@ -239,8 +243,7 @@ function Get-IntuneAssignment {
 
     # Finer labels for surfaces that hold several kinds of thing; anything not
     # listed keeps the surface's own label. Each surface names the kind in a
-    # different place. Enrollment defaults are left out: they always target
-    # All users or All devices, so they never make a row.
+    # different place.
     $catalogKinds = @{   # templateReference.templateFamily
         baseline                                     = 'Security baseline'
         endpointSecurityAntivirus                    = 'Endpoint security (Antivirus)'
@@ -259,13 +262,53 @@ function Get-IntuneAssignment {
         '#microsoft.graph.macOSSoftwareUpdateConfiguration'      = 'Update policy (macOS)'
     }
     $enrollmentKinds = @{   # deviceEnrollmentConfigurationType
-        windows10EnrollmentCompletionPageConfiguration = 'Enrollment status page'
-        platformRestrictions                           = 'Enrollment restriction (platform)'
-        singlePlatformRestriction                      = 'Enrollment restriction (platform)'
-        limit                                          = 'Enrollment restriction (limit)'
-        windowsHelloForBusiness                        = 'Windows Hello for Business'
-        deviceComanagementAuthorityConfiguration       = 'Co-management settings'
-        enrollmentNotificationsConfiguration           = 'Enrollment notification'
+        # The tenant defaults ('All users and all devices') usually report the
+        # plain value; the default* values are in the enum too, so map those.
+        windows10EnrollmentCompletionPageConfiguration        = 'Enrollment status page'
+        defaultWindows10EnrollmentCompletionPageConfiguration = 'Enrollment status page'
+        platformRestrictions                                  = 'Enrollment restriction (platform)'
+        defaultPlatformRestrictions                           = 'Enrollment restriction (platform)'
+        singlePlatformRestriction                             = 'Enrollment restriction (platform)'
+        limit                                                 = 'Enrollment restriction (limit)'
+        defaultLimit                                          = 'Enrollment restriction (limit)'
+        windowsHelloForBusiness                               = 'Windows Hello for Business'
+        defaultWindowsHelloForBusiness                        = 'Windows Hello for Business'
+        deviceComanagementAuthorityConfiguration              = 'Co-management settings'
+        enrollmentNotificationsConfiguration                  = 'Enrollment notification'
+        windowsRestore                                        = 'Windows backup and restore'
+    }
+    # @odata.type. Without these, a Win32 app and the Store copy of the same
+    # app are two identical rows. Windows kinds go unprefixed (Win32, MSI and
+    # MSIX are Windows-only anyway); the other platforms say which they are.
+    $appKinds = @{
+        '#microsoft.graph.win32LobApp'                  = 'Win32 app'
+        '#microsoft.graph.win32CatalogApp'              = 'Win32 app (catalog)'
+        '#microsoft.graph.winGetApp'                    = 'Store app'
+        '#microsoft.graph.windowsStoreApp'              = 'Store app (legacy)'
+        '#microsoft.graph.microsoftStoreForBusinessApp' = 'Store for Business app'
+        '#microsoft.graph.officeSuiteApp'               = 'Microsoft 365 Apps'
+        '#microsoft.graph.windowsMicrosoftEdgeApp'      = 'Edge'
+        '#microsoft.graph.windowsMobileMSI'             = 'MSI app'
+        '#microsoft.graph.windowsUniversalAppX'         = 'MSIX app'
+        '#microsoft.graph.windowsAppX'                  = 'AppX app'
+        '#microsoft.graph.windowsWebApp'                = 'Web link'
+        '#microsoft.graph.webApp'                       = 'Web link'
+        '#microsoft.graph.iosStoreApp'                  = 'iOS store app'
+        '#microsoft.graph.iosVppApp'                    = 'iOS VPP app'
+        '#microsoft.graph.iosLobApp'                    = 'iOS LOB app'
+        '#microsoft.graph.iosiPadOSWebClip'             = 'iOS web clip'
+        '#microsoft.graph.macOSDmgApp'                  = 'macOS DMG app'
+        '#microsoft.graph.macOSPkgApp'                  = 'macOS PKG app'
+        '#microsoft.graph.macOSLobApp'                  = 'macOS LOB app'
+        '#microsoft.graph.macOsVppApp'                  = 'macOS VPP app'
+        '#microsoft.graph.macOSOfficeSuiteApp'          = 'Microsoft 365 Apps (macOS)'
+        '#microsoft.graph.macOSMicrosoftEdgeApp'        = 'Edge (macOS)'
+        '#microsoft.graph.macOSMicrosoftDefenderApp'    = 'Defender (macOS)'
+        '#microsoft.graph.macOSWebClip'                 = 'macOS web clip'
+        '#microsoft.graph.androidManagedStoreApp'       = 'Managed Google Play app'
+        '#microsoft.graph.androidManagedStoreWebApp'    = 'Managed Google Play web link'
+        '#microsoft.graph.androidStoreApp'              = 'Android store app'
+        '#microsoft.graph.androidLobApp'                = 'Android LOB app'
     }
 
     # Every assignable surface, in the order they're read. NoExpand marks a
@@ -292,7 +335,8 @@ function Get-IntuneAssignment {
         @{ Type = 'Autopilot profile';          Uri = 'beta/deviceManagement/windowsAutopilotDeploymentProfiles' }
         @{ Type = 'Enrollment configuration';   Uri = 'beta/deviceManagement/deviceEnrollmentConfigurations'
            Kind = { param($i) $enrollmentKinds["$($i.deviceEnrollmentConfigurationType)"] } }
-        @{ Type = 'App';                        Uri = 'beta/deviceAppManagement/mobileApps' }
+        @{ Type = 'App';                        Uri = 'beta/deviceAppManagement/mobileApps'
+           Kind = { param($i) $appKinds["$($i.'@odata.type')"] } }
         @{ Type = 'App configuration';          Uri = 'beta/deviceAppManagement/mobileAppConfigurations' }
         @{ Type = 'App configuration (MAM)';    Uri = 'beta/deviceAppManagement/targetedManagedAppConfigurations' }
         @{ Type = 'App protection (iOS)';       Uri = 'beta/deviceAppManagement/iosManagedAppProtections' }
@@ -335,10 +379,10 @@ function Get-IntuneAssignment {
                         }
                         if (-not $mode) { continue }
                         $via = $targets[$tid]   # $null: the -Group group itself
-                        if ($via) { $how = "via $via"; $toName = $via; $toId = $tid }
-                        else      { $how = $null;      $toName = $groupName; $toId = $groupId }
+                        if ($via) { $toName = $via;       $toId = $tid }
+                        else      { $toName = $groupName; $toId = $groupId }
                     } elseif ($everyone -and $odataType -eq $everyone.Type) {
-                        $mode = 'Include'; $via = $null; $how = $everyone.Name; $toName = $everyone.Name; $toId = $null
+                        $mode = 'Include'; $via = $null; $toName = $everyone.Name; $toId = $null
                     } else {
                         if ($Inherited) {
                             switch ($odataType) {
@@ -367,10 +411,15 @@ function Get-IntuneAssignment {
                     }
 
                     if ($via) { $viaParent++ }
+                    # Every profile assignment says 'apply'; only the other
+                    # intents (an app's required/available/uninstall, a
+                    # profile's rare 'remove') tell the reader something.
+                    $intent = if ($a.intent -and $a.intent -ne 'apply') { $a.intent }
                     $rows.Add([pscustomobject]@{
-                        Type       = if ($a.intent) { "$type ($($a.intent))" } else { $type }
+                        PSTypeName = 'PwshToolkit.IntuneAssignment'   # the grouped table view
+                        Type       = if ($intent) { "$type ($intent)" } else { $type }
                         Name       = $item.displayName ?? $item.name   # Settings Catalog says `name`
-                        Assignment = if ($how) { "$mode ($how)" } else { $mode }
+                        Assignment = $mode
                         Filter     = $filterText
                         Intent     = $a.intent
                         PolicyId   = $item.id
@@ -391,7 +440,7 @@ function Get-IntuneAssignment {
     }
 
     # Summary before any row, so it lands above the table rather than inside it.
-    $include = @($rows | Where-Object Assignment -Like 'Include*').Count
+    $include = @($rows | Where-Object Assignment -EQ 'Include').Count
     $summary = if ($rows.Count) { "$include included, $($rows.Count - $include) excluded" }
                elseif (-not $isGroup) { 'no Intune assignments found' }
                elseif ($Inherited) { 'no direct or inherited Intune assignments found' }
@@ -404,12 +453,29 @@ function Get-IntuneAssignment {
     }
     Write-Host "${label}: $summary" -ForegroundColor Cyan
 
-    foreach ($r in $rows | Sort-Object Type, Name) {
-        # Four columns, not five: PowerShell renders a display set of five or
-        # more as a per-object list, which defeats the point of a table.
-        $r | Add-Member -MemberType MemberSet -Name PSStandardMembers -PassThru -Value ([System.Management.Automation.PSMemberInfo[]]@(
-            [System.Management.Automation.PSPropertySet]::new(
-                'DefaultDisplayPropertySet', [string[]]@('Type', 'Name', 'Assignment', 'Filter'))
-        ))
+    # A policy that includes and excludes the subject through different
+    # groups: the exclusion wins, but the table puts the two rows under
+    # different headings, so say so here. Keyed on intent as well, because an
+    # app's exclusions belong to one intent (excluded from required says
+    # nothing about available).
+    $both = @($rows | Group-Object PolicyId, Intent |
+        Where-Object { $_.Group.Assignment -contains 'Include' -and $_.Group.Assignment -contains 'Exclude' } |
+        ForEach-Object { $first = $_.Group[0]; if ($first.Intent -and $first.Intent -ne 'apply') { "$($first.Name) ($($first.Intent))" } else { $first.Name } } |
+        Sort-Object -Unique)
+    if ($both.Count) {
+        Write-Host "Both included and excluded, so the exclusion wins: $($both -join ', ')" -ForegroundColor Cyan
     }
+
+    # The grouped table lives in a format file next to this one, loaded on
+    # first use rather than at profile load.
+    if (-not (Get-FormatData -TypeName 'PwshToolkit.IntuneAssignment' -ErrorAction Ignore)) {
+        Update-FormatData -PrependPath (Join-Path $PSScriptRoot 'IntuneAssignments.format.ps1xml')
+    }
+
+    # Sorted the way the table groups them: the -Group group's own rows, then
+    # each group they come through, then All users / All devices, the long
+    # tail in most tenants, so what's specific to the subject comes first.
+    # GroupId keeps two same-named groups apart.
+    $rank = { if ($_.GroupId -and $_.GroupId -eq $groupId) { 0 } elseif ($_.GroupId) { 1 } else { 2 } }
+    $rows | Sort-Object $rank, Group, GroupId, Type, Name
 }

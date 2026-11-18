@@ -2129,12 +2129,15 @@ Describe 'Intune assignments (mocked Graph)' {
         Mock Write-Host { }   # the summary line; asserted where it matters
         Mock Invoke-MgGraphRequest {
             # g = the group under test, p = a group it belongs to, o = some
-            # other group, au = an administrative unit it's also in.
-            # Pat (pat@contoso.com) is in p and o; LAPTOP-1 is in g and p.
+            # other group, au = an administrative unit it's also in, k = a
+            # group that excludes devices from Kiosk.
+            # Pat (pat@contoso.com) is in p and o; LAPTOP-1 is in g, p and k.
             $g  = 'aaaaaaaa-0000-0000-0000-000000000001'
             $p  = 'bbbbbbbb-0000-0000-0000-000000000002'
             $o  = 'cccccccc-0000-0000-0000-000000000003'
             $au = 'dddddddd-0000-0000-0000-000000000004'
+            $k  = 'abababab-0000-0000-0000-00000000000a'
+            $allDevices = '#microsoft.graph.allDevicesAssignmentTarget'
             $inc = '#microsoft.graph.groupAssignmentTarget'
             $exc = '#microsoft.graph.exclusionGroupAssignmentTarget'
             $grp = '#microsoft.graph.group'
@@ -2154,6 +2157,7 @@ Describe 'Intune assignments (mocked Graph)' {
                 '*devices/*/transitiveMemberOf*' { @{ value = @(
                     @{ '@odata.type' = $grp; id = $g; displayName = 'Pilot Devices' }
                     @{ '@odata.type' = $grp; id = $p; displayName = 'All Pilots' }
+                    @{ '@odata.type' = $grp; id = $k; displayName = 'Kiosk Exclusions' }
                 ) }; break }
                 '*v1.0/users/*' {
                     if ($Uri -like '*pat%40contoso.com*') { @{ id = '77777777-0000-0000-0000-000000000007'; displayName = 'Pat Pilot'; userPrincipalName = 'pat@contoso.com' } }
@@ -2179,10 +2183,12 @@ Describe 'Intune assignments (mocked Graph)' {
                     break }
                 '*deviceConfigurations*' { @{ value = @(
                     @{ id = 'dc1'; displayName = 'Wi-Fi'; assignments = @(
-                        @{ target = @{ '@odata.type' = $inc; groupId = $g } }
-                        @{ target = @{ '@odata.type' = $inc; groupId = $o } }) }
+                        @{ intent = 'apply'; target = @{ '@odata.type' = $inc; groupId = $g } }
+                        @{ intent = 'apply'; target = @{ '@odata.type' = $inc; groupId = $o } }) }
                     @{ id = 'dc2'; displayName = 'VPN';   assignments = @(@{ target = @{ '@odata.type' = $exc; groupId = $g } }) }
-                    @{ id = 'dc3'; displayName = 'Kiosk'; assignments = @(@{ target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' } }) }
+                    @{ id = 'dc3'; displayName = 'Kiosk'; assignments = @(
+                        @{ target = @{ '@odata.type' = $allDevices } }
+                        @{ target = @{ '@odata.type' = $exc; groupId = $k } }) }
                     @{ id = 'dc4'; displayName = 'Ring 1'; '@odata.type' = '#microsoft.graph.windowsUpdateForBusinessConfiguration'
                        assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }
                 ) }; break }
@@ -2197,6 +2203,8 @@ Describe 'Intune assignments (mocked Graph)' {
                 '*deviceEnrollmentConfigurations*' { @{ value = @(
                     @{ id = 'e1'; displayName = 'Pilot ESP'; deviceEnrollmentConfigurationType = 'windows10EnrollmentCompletionPageConfiguration'
                        assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }
+                    @{ id = 'e2'; displayName = 'All users and all devices'; deviceEnrollmentConfigurationType = 'windowsRestore'
+                       assignments = @(@{ target = @{ '@odata.type' = $allDevices } }) }
                 ) }; break }
                 '*windowsQualityUpdatePolicies*' { @{ value = @(
                     @{ id = 'q1'; displayName = 'Hotpatch ring'; assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }
@@ -2212,10 +2220,10 @@ Describe 'Intune assignments (mocked Graph)' {
                 '*deviceManagementScripts/s1/assignments*' { @{ value = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }; break }
                 '*deviceManagementScripts*' { @{ value = @(@{ id = 's1'; displayName = 'Set wallpaper' }) }; break }   # no assignments key: not expanded
                 '*mobileApps*' { @{ value = @(
-                    @{ id = 'a1'; displayName = '7-Zip'; assignments = @(
+                    @{ id = 'a1'; displayName = '7-Zip'; '@odata.type' = '#microsoft.graph.win32LobApp'; assignments = @(
                         @{ intent = 'required';  target = @{ '@odata.type' = $inc; groupId = $g } }
                         @{ intent = 'uninstall'; target = @{ '@odata.type' = $exc; groupId = $g } }) }
-                    @{ id = 'a2'; displayName = 'Company Portal'; assignments = @(
+                    @{ id = 'a2'; displayName = 'Company Portal'; '@odata.type' = '#microsoft.graph.someFutureApp'; assignments = @(
                         @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.allLicensedUsersAssignmentTarget' } }) }
                 ) }; break }
                 '*assignmentFilters*' { @{ value = @(@{ id = 'f1'; displayName = 'Windows 11 only' }) }; break }
@@ -2230,7 +2238,7 @@ Describe 'Intune assignments (mocked Graph)' {
         # target, or anything that comes through the parent group.
         $rows.Count | Should -Be 11
         @($rows | Where-Object Assignment -EQ 'Include').Count | Should -Be 9
-        @($rows | Where-Object Assignment -EQ 'Exclude').Name | Should -Be @('7-Zip', 'VPN')
+        @($rows | Where-Object Assignment -EQ 'Exclude').Name | Should -Be @('VPN', '7-Zip')   # by Type: Device configuration, Win32 app
         $rows.Name | Should -Not -Contain 'Kiosk'
         $rows.Name | Should -Not -Contain 'Scoped'
         $rows.Name | Should -Not -Contain 'Clear temp'
@@ -2242,25 +2250,29 @@ Describe 'Intune assignments (mocked Graph)' {
         $rows = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
         $typeOf = { param($n) ($rows | Where-Object Name -EQ $n).Type }
         & $typeOf 'Ring 1'    | Should -Be 'Update ring'
-        & $typeOf 'Wi-Fi'     | Should -Be 'Device configuration'
+        & $typeOf 'Wi-Fi'     | Should -Be 'Device configuration'   # its 'apply' intent says nothing, so it's left off
         & $typeOf 'BitLocker' | Should -Be 'Endpoint security (Disk encryption)'
         & $typeOf 'Edge'      | Should -Be 'Settings catalog'
         & $typeOf 'Pilot ESP' | Should -Be 'Enrollment status page'
         & $typeOf 'Hotpatch ring' | Should -Be 'Quality update policy'
     }
 
-    It 'adds what comes through a parent group with -Inherited, marked with the parent' {
+    It 'adds what comes through a parent group with -Inherited, under the parent' {
         $rows = @(Get-IntuneAssignment 'Pilot Devices' -Inherited -WarningAction SilentlyContinue)
         $rows.Count | Should -Be 13
         $clear = $rows | Where-Object Name -EQ 'Clear temp'
-        $clear.Assignment | Should -Be 'Include (via All Pilots)'
+        $clear.Assignment | Should -Be 'Include'
         $clear.Group      | Should -Be 'All Pilots'
         $clear.GroupId    | Should -Be 'bbbbbbbb-0000-0000-0000-000000000002'
-        ($rows | Where-Object Name -EQ 'Fix VPN').Assignment | Should -Be 'Exclude (via All Pilots)'
+        $vpnFix = $rows | Where-Object Name -EQ 'Fix VPN'
+        $vpnFix.Assignment | Should -Be 'Exclude'
+        $vpnFix.Group      | Should -Be 'All Pilots'
         ($rows | Where-Object Name -EQ 'VPN').Group | Should -Be 'Pilot Devices'   # direct rows unchanged
         $rows.Name | Should -Not -Contain 'AU only'   # an administrative unit isn't a parent group
+        # The group's own rows first, then the parent's.
+        @($rows.Group | Select-Object -Unique) | Should -Be @('Pilot Devices', 'All Pilots')
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
-            "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 10 included, 3 excluded (2 inherited); not listed: 1 to All users, 1 to All devices' }
+            "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 10 included, 3 excluded (2 inherited); not listed: 1 to All users, 2 to All devices' }
     }
 
     It 'falls back to direct assignments when the parent groups cannot be read' {
@@ -2273,14 +2285,18 @@ Describe 'Intune assignments (mocked Graph)' {
     It 'lists what reaches a user: through their groups, and All users' {
         $rows = @(Get-IntuneAssignment -User pat@contoso.com -WarningAction SilentlyContinue)
         $rows.Count | Should -Be 4
-        ($rows | Where-Object Name -EQ 'Clear temp').Assignment | Should -Be 'Include (via All Pilots)'
-        ($rows | Where-Object Name -EQ 'Fix VPN').Assignment    | Should -Be 'Exclude (via All Pilots)'
-        ($rows | Where-Object Name -EQ 'Wi-Fi').Assignment      | Should -Be 'Include (via Other)'
+        $byName = @{}; foreach ($r in $rows) { $byName[$r.Name] = "$($r.Assignment) via $($r.Group)" }
+        $byName['Clear temp'] | Should -Be 'Include via All Pilots'
+        $byName['Fix VPN']    | Should -Be 'Exclude via All Pilots'
+        $byName['Wi-Fi']      | Should -Be 'Include via Other'
         $portal = $rows | Where-Object Name -EQ 'Company Portal'
-        $portal.Assignment | Should -Be 'Include (All users)'
+        $portal.Assignment | Should -Be 'Include'
         $portal.Group      | Should -Be 'All users'
         $portal.GroupId    | Should -BeNullOrEmpty
+        $portal.Type       | Should -Be 'App (required)'   # an app kind not in the table keeps the plain label
         $rows.Name | Should -Not -Contain 'Kiosk'   # All devices doesn't reach a user
+        # Groups by name, All users last.
+        @($rows.Group | Select-Object -Unique) | Should -Be @('All Pilots', 'Other', 'All users')
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
             "$Object" -eq 'Pat Pilot (pat@contoso.com): 3 included, 1 excluded (member of 2 groups)' }
     }
@@ -2292,17 +2308,36 @@ Describe 'Intune assignments (mocked Graph)' {
 
     It 'lists what reaches a device: through its groups, and All devices' {
         $rows = @(Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue)
-        $rows.Count | Should -Be 14   # g's 11, p's 2, Kiosk
-        ($rows | Where-Object Name -EQ 'VPN').Assignment   | Should -Be 'Exclude (via Pilot Devices)'
-        ($rows | Where-Object Name -EQ 'Kiosk').Assignment | Should -Be 'Include (All devices)'
+        $rows.Count | Should -Be 16   # g's 11, p's 2, Kiosk and its exclusion, the backup default
+        $vpn = $rows | Where-Object Name -EQ 'VPN'
+        $vpn.Assignment | Should -Be 'Exclude'
+        $vpn.Group      | Should -Be 'Pilot Devices'
+        @($rows | Where-Object Name -EQ 'Kiosk' | ForEach-Object { "$($_.Assignment) via $($_.Group)" }) |
+            Should -Be @('Exclude via Kiosk Exclusions', 'Include via All devices')
+        ($rows | Where-Object Name -EQ 'All users and all devices').Type | Should -Be 'Windows backup and restore'
         $rows.Name | Should -Not -Contain 'Company Portal'   # All users doesn't reach a device
+        # Groups by name, All devices last.
+        @($rows.Group | Select-Object -Unique) | Should -Be @('All Pilots', 'Kiosk Exclusions', 'Pilot Devices', 'All devices')
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
-            "$Object" -eq 'LAPTOP-1 (eeeeeeee-0000-0000-0000-000000000005): 11 included, 3 excluded (member of 2 groups)' }
+            "$Object" -eq 'LAPTOP-1 (eeeeeeee-0000-0000-0000-000000000005): 12 included, 4 excluded (member of 3 groups)' }
+    }
+
+    It 'names a policy that both includes and excludes the subject' {
+        $null = Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue
+        # Kiosk: All devices includes it, Kiosk Exclusions excludes it. 7-Zip's
+        # required include and uninstall exclude are different intents, so no.
+        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
+            "$Object" -eq 'Both included and excluded, so the exclusion wins: Kiosk' }
+    }
+
+    It 'says nothing about conflicts when there are none' {
+        $null = Get-IntuneAssignment -User pat@contoso.com -WarningAction SilentlyContinue
+        Should -Invoke Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { "$Object" -like 'Both included and excluded*' }
     }
 
     It 'finds a device by its Intune device id' {
         $rows = @(Get-IntuneAssignment -Device '11111111-0000-0000-0000-000000000008' -WarningAction SilentlyContinue)
-        $rows.Count | Should -Be 14
+        $rows.Count | Should -Be 16
         Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*devices/eeeeeeee-0000-0000-0000-000000000005/transitiveMemberOf' }
     }
 
@@ -2318,9 +2353,10 @@ Describe 'Intune assignments (mocked Graph)' {
         Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*intents?*expand*' }
     }
 
-    It 'puts the app intent in Type and names the assignment filter' {
+    It 'puts the app kind and intent in Type and names the assignment filter' {
         $rows = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
-        @($rows | Where-Object Name -EQ '7-Zip').Type | Should -Be @('App (required)', 'App (uninstall)')
+        @($rows | Where-Object Name -EQ '7-Zip').Type | Should -Be @('Win32 app (required)', 'Win32 app (uninstall)')
+        @($rows | Where-Object Name -EQ 'Wi-Fi').Intent | Should -Be 'apply'   # kept on the row, just not in Type
         ($rows | Where-Object Name -EQ 'BitLocker').Filter | Should -Be 'Windows 11 only (include)'
         ($rows | Where-Object Name -EQ 'VPN').Filter | Should -BeNullOrEmpty
     }
@@ -2331,9 +2367,13 @@ Describe 'Intune assignments (mocked Graph)' {
         $rows.Count | Should -Be 11   # the other surfaces still come back
     }
 
-    It 'renders as a table by default (four display columns)' {
-        $row = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)[0]
-        $row.PSStandardMembers.DefaultDisplayPropertySet.ReferencedPropertyNames | Should -Be @('Type', 'Name', 'Assignment', 'Filter')
+    It 'renders as a table grouped under each group, with the group name in the heading' {
+        $rows = @(Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue)
+        $rows[0].PSObject.TypeNames[0] | Should -Be 'PwshToolkit.IntuneAssignment'
+        $lines = ($rows | Out-String -Width 200) -split '\r?\n'
+        @($lines | Where-Object { $_ -match '^\s+Group: (.+)$' } | ForEach-Object { $Matches[1].Trim() }) |
+            Should -Be @('All Pilots', 'Kiosk Exclusions', 'Pilot Devices', 'All devices')
+        @($lines | Where-Object { $_ -match '^Type\s+Name\s+Assignment\s+Filter\s*$' }).Count | Should -Be 4
     }
 
     It 'stops with the candidate ids when a display name is ambiguous' {
