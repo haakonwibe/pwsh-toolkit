@@ -52,6 +52,7 @@ BeforeAll {
     . (Join-Path $commonDir 'InstalledApps.ps1')   # Test-ArpEntryVisible, Split-UninstallCommand, Resolve-UninstallCommand
     . (Join-Path $repoRoot 'Profiles/M365/IntuneManagement.ps1')  # Get-ComplianceBucket, ConvertTo-IntuneDashboardHtml (defining these needs no Graph)
     . (Join-Path $repoRoot 'Profiles/M365/IntuneWin32Apps.ps1')   # Get-IntuneWin32App, Get-IntuneWin32AppContentInfo (mocked below)
+    . (Join-Path $repoRoot 'Profiles/M365/IntuneAssignments.ps1') # Get-IntuneGroupAssignment (mocked below)
 }
 
 Describe 'touch' {
@@ -2114,6 +2115,119 @@ Describe 'Intune Win32 app content info (mocked Graph)' {
         $d = Get-IntuneWin32AppDetail -Id 'a1'
         $d.App | Should -Be '7-Zip'
         $d.FailedDevices | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Intune group assignments (mocked Graph)' {
+
+    BeforeAll {
+        # Same stub-then-mock pattern as the overview-data suite above.
+        function Invoke-MgGraphRequest { param($Method, $Uri, $ErrorAction) throw "stub not mocked: $Method $Uri (ErrorAction=$ErrorAction)" }
+        function Get-MgContext { }
+
+        Mock Get-MgContext { [pscustomobject]@{ TenantId = 'tid' } }
+        Mock Write-Host { }   # the summary line; asserted where it matters
+        Mock Invoke-MgGraphRequest {
+            # g = the group under test, o = some other group.
+            $g = 'aaaaaaaa-0000-0000-0000-000000000001'
+            $o = 'cccccccc-0000-0000-0000-000000000003'
+            $inc = '#microsoft.graph.groupAssignmentTarget'
+            $exc = '#microsoft.graph.exclusionGroupAssignmentTarget'
+            # Every case breaks: switch runs EVERY matching case, and the
+            # per-item URIs also match their collection's pattern.
+            switch -Wildcard ($Uri) {
+                '*v1.0/groups/*'   { @{ displayName = 'Pilot Devices' }; break }
+                '*v1.0/groups*'    {
+                    if ($Uri -like '*Pilot*')    { @{ value = @(@{ id = $g; displayName = 'Pilot Devices' }) } }
+                    elseif ($Uri -like '*Twin*') { @{ value = @(@{ id = $g; displayName = 'Twin' }, @{ id = $o; displayName = 'Twin' }) } }
+                    else                         { @{ value = @() } }
+                    break }
+                '*deviceConfigurations*' { @{ value = @(
+                    @{ id = 'dc1'; displayName = 'Wi-Fi'; assignments = @(
+                        @{ target = @{ '@odata.type' = $inc; groupId = $g } }
+                        @{ target = @{ '@odata.type' = $inc; groupId = $o } }) }
+                    @{ id = 'dc2'; displayName = 'VPN';   assignments = @(@{ target = @{ '@odata.type' = $exc; groupId = $g } }) }
+                    @{ id = 'dc3'; displayName = 'Kiosk'; assignments = @(@{ target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' } }) }
+                ) }; break }
+                '*configurationPolicies*' { @{ value = @(
+                    @{ id = 'cp1'; name = 'BitLocker'; assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g
+                        deviceAndAppManagementAssignmentFilterId = 'f1'; deviceAndAppManagementAssignmentFilterType = 'include' } }) }
+                    @{ id = 'cp2'; name = 'Scoped'; assignments = @(@{ target = @{ '@odata.type' = '#microsoft.graph.scopeTagGroupAssignmentTarget'; groupId = $g } }) }
+                ) }; break }
+                '*deviceCompliancePolicies*' { throw "Response status code does not indicate success: Forbidden (Forbidden).`nmore detail"; break }
+                '*intents/i1/assignments*' { @{ value = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }; break }
+                '*intents*'                { @{ value = @(@{ id = 'i1'; displayName = 'Defender baseline' }) }; break }
+                '*deviceManagementScripts/s1/assignments*' { @{ value = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }; break }
+                '*deviceManagementScripts*' { @{ value = @(@{ id = 's1'; displayName = 'Set wallpaper' }) }; break }   # no assignments key: not expanded
+                '*mobileApps*' { @{ value = @(
+                    @{ id = 'a1'; displayName = '7-Zip'; assignments = @(
+                        @{ intent = 'required';  target = @{ '@odata.type' = $inc; groupId = $g } }
+                        @{ intent = 'uninstall'; target = @{ '@odata.type' = $exc; groupId = $g } }) }
+                ) }; break }
+                '*assignmentFilters*' { @{ value = @(@{ id = 'f1'; displayName = 'Windows 11 only' }) }; break }
+                default { @{ value = @() } }
+            }
+        }
+    }
+
+    It 'keeps only direct include and exclude assignments of the group' {
+        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
+        # Not the other group's Wi-Fi assignment, All devices, or the scope-tag target.
+        $rows.Count | Should -Be 7
+        @($rows | Where-Object Assignment -EQ 'Include').Count | Should -Be 5
+        @($rows | Where-Object Assignment -EQ 'Exclude').Name | Should -Be @('7-Zip', 'VPN')
+        $rows.Name | Should -Not -Contain 'Kiosk'
+        $rows.Name | Should -Not -Contain 'Scoped'
+        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 5 included, 2 excluded' }
+    }
+
+    It 'reads assignments per item where the collection did not expand them' {
+        $null = Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*deviceManagementScripts/s1/assignments' }
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*intents/i1/assignments' }
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*intents?*expand*' }
+    }
+
+    It 'puts the app intent in Type and names the assignment filter' {
+        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
+        @($rows | Where-Object Name -EQ '7-Zip').Type | Should -Be @('App (required)', 'App (uninstall)')
+        ($rows | Where-Object Name -EQ 'BitLocker').Filter | Should -Be 'Windows 11 only (include)'
+        ($rows | Where-Object Name -EQ 'VPN').Filter | Should -BeNullOrEmpty
+    }
+
+    It 'names a surface it could not read instead of skipping it silently' {
+        $rows = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue -WarningVariable w)
+        "$w" | Should -BeLike '*Compliance (Response status code does not indicate success: Forbidden (Forbidden).)*'
+        $rows.Count | Should -Be 7   # the other surfaces still come back
+    }
+
+    It 'renders as a table by default (four display columns)' {
+        $row = @(Get-IntuneGroupAssignment 'Pilot Devices' -WarningAction SilentlyContinue)[0]
+        $row.PSStandardMembers.DefaultDisplayPropertySet.ReferencedPropertyNames | Should -Be @('Type', 'Name', 'Assignment', 'Filter')
+    }
+
+    It 'stops with the candidate ids when a display name is ambiguous' {
+        { Get-IntuneGroupAssignment 'Twin' -ErrorAction Stop } |
+            Should -Throw '*aaaaaaaa-0000-0000-0000-000000000001, cccccccc-0000-0000-0000-000000000003*'
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like 'beta/*' }
+    }
+
+    It 'escapes a name for both OData and the query string' {
+        { Get-IntuneGroupAssignment "O'Brien & Co" -ErrorAction Stop } | Should -Throw "*No group is named*"
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -like '*%27O%27%27Brien%20%26%20Co%27*' }
+    }
+
+    It 'takes an object id as-is, without a name search' {
+        $rows = @(Get-IntuneGroupAssignment 'AAAAAAAA-0000-0000-0000-000000000001' -WarningAction SilentlyContinue)
+        $rows.Count | Should -Be 7
+        $rows[0].Group | Should -Be 'Pilot Devices'
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*groups`?*' }   # `? = a literal ?, not the wildcard
+    }
+
+    It 'warns instead of throwing when not connected' {
+        Mock Get-MgContext { $null }
+        @(Get-IntuneGroupAssignment 'Pilot Devices' 3>$null) | Should -BeNullOrEmpty
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It
     }
 }
 

@@ -21,6 +21,21 @@ function Get-MgGraphAllPage {
     return $items
 }
 
+# Group id -> display name, through a caller-owned cache so a run looks each
+# distinct group up once. Falls back to the id itself when the directory read
+# fails (deleted group, or no directory read on this session): the id still
+# identifies it.
+function Resolve-GroupDisplayName {
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string] $GroupId, [hashtable] $Cache = @{})
+    if (-not $Cache.ContainsKey($GroupId)) {
+        $Cache[$GroupId] = try {
+            (Invoke-MgGraphRequest -Method GET -Uri "v1.0/groups/$GroupId`?`$select=displayName" -ErrorAction Stop).displayName
+        } catch { $GroupId }
+    }
+    $Cache[$GroupId]
+}
+
 # Gather the whole Intune snapshot in one place so the console overview and the
 # -AsDashboard render read the SAME data (no double-fetch, no drift). A fatal
 # failure (the managed-device read) comes back as an object with Error set —

@@ -40,6 +40,7 @@ $script:ProfileTips = @(
     [pscustomobject]@{ H = 'Get-TenantOverview  —  comprehensive tenant statistics in one shot';                        E = 'Try: Get-TenantOverview   (after Connect-Tenant)' }
     [pscustomobject]@{ H = 'Get-IntuneOverview  —  one read-only snapshot of the device estate';                        E = 'Try: Get-IntuneOverview   (also: -AsDashboard for the visual cockpit)' }
     [pscustomobject]@{ H = 'Get-IntuneWin32App  —  Win32 apps with the content info the portal hides';                  E = 'Try: Get-IntuneWin32App reader | Get-IntuneWin32AppDetail | fl   (content files: | Get-IntuneWin32AppContentInfo)' }
+    [pscustomobject]@{ H = 'Get-IntuneGroupAssignment  —  everything Intune assigns to a group, or excludes it from';   E = "Try: Get-IntuneGroupAssignment 'Pilot Devices'   (exclusions only: | ? Assignment -eq Exclude)" }
     [pscustomobject]@{ H = 'ask <question>  —  quick reference via the ch.at API';                                      E = 'Try: ask "regex to match an IPv4 address"' }
     [pscustomobject]@{ H = 'docs / desktop / downloads / onedrive / home  —  named navigation shortcuts';              E = 'Try: downloads   (or use j for an interactive picker)' }
     [pscustomobject]@{ H = 'mkcd / up / .. / ...  —  make-and-enter a dir; go up N levels';                            E = 'Try: mkcd src\new-feature   (also: up 2, .., ...)' }

@@ -91,15 +91,7 @@ function Resolve-MobileAppAssignmentTarget {
     param($Target, [hashtable] $GroupNameCache)
     # Resolve the group name up front when the target carries one, so both the
     # include and exclude branches share the cache lookup.
-    $groupName = $null
-    if ($Target.groupId) {
-        if (-not $GroupNameCache.ContainsKey($Target.groupId)) {
-            $GroupNameCache[$Target.groupId] = try {
-                (Invoke-MgGraphRequest -Method GET -Uri "v1.0/groups/$($Target.groupId)`?`$select=displayName" -ErrorAction Stop).displayName
-            } catch { $Target.groupId }   # no directory read on this session — the id still identifies it
-        }
-        $groupName = $GroupNameCache[$Target.groupId]
-    }
+    $groupName = if ($Target.groupId) { Resolve-GroupDisplayName -GroupId $Target.groupId -Cache $GroupNameCache }
     # Order matters: exclusionGroupAssignmentTarget also matches '*groupAssignmentTarget'.
     switch -Wildcard ("$($Target.'@odata.type')") {
         '*exclusionGroupAssignmentTarget'   { "NOT $groupName"; break }
