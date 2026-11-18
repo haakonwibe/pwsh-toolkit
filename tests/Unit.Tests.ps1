@@ -2198,7 +2198,8 @@ Describe 'Intune assignments (mocked Graph)' {
                         deviceAndAppManagementAssignmentFilterId = 'f1'; deviceAndAppManagementAssignmentFilterType = 'include' } }) }
                     @{ id = 'cp2'; name = 'Scoped'; assignments = @(@{ target = @{ '@odata.type' = '#microsoft.graph.scopeTagGroupAssignmentTarget'; groupId = $g } }) }
                     @{ id = 'cp3'; name = 'Edge'; templateReference = @{ templateFamily = 'none' }
-                       assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }
+                       assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g
+                        deviceAndAppManagementAssignmentFilterId = 'f2'; deviceAndAppManagementAssignmentFilterType = 'exclude' } }) }
                 ) }; break }
                 '*deviceEnrollmentConfigurations*' { @{ value = @(
                     @{ id = 'e1'; displayName = 'Pilot ESP'; deviceEnrollmentConfigurationType = 'windows10EnrollmentCompletionPageConfiguration'
@@ -2225,8 +2226,20 @@ Describe 'Intune assignments (mocked Graph)' {
                         @{ intent = 'uninstall'; target = @{ '@odata.type' = $exc; groupId = $g } }) }
                     @{ id = 'a2'; displayName = 'Company Portal'; '@odata.type' = '#microsoft.graph.someFutureApp'; assignments = @(
                         @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.allLicensedUsersAssignmentTarget' } }) }
+                    # Two pairs of same-named apps, only Pat's (through o): one
+                    # pair told apart by version, one by the date added.
+                    @{ id = 'a3'; displayName = 'Wireshark'; displayVersion = '4.4.5'; createdDateTime = '2025-03-21T12:00:00Z'
+                       assignments = @(@{ intent = 'available'; target = @{ '@odata.type' = $inc; groupId = $o } }) }
+                    @{ id = 'a4'; displayName = 'Wireshark'; displayVersion = '4.4.0'; createdDateTime = '2024-09-25T12:00:00Z'
+                       assignments = @(@{ intent = 'available'; target = @{ '@odata.type' = $inc; groupId = $o } }) }
+                    @{ id = 'a5'; displayName = 'Notepad++'; displayVersion = '8.6'; createdDateTime = '2024-01-10T12:00:00Z'
+                       assignments = @(@{ intent = 'available'; target = @{ '@odata.type' = $inc; groupId = $o } }) }
+                    @{ id = 'a6'; displayName = 'Notepad++'; displayVersion = '8.6'; createdDateTime = '2024-06-01T12:00:00Z'
+                       assignments = @(@{ intent = 'available'; target = @{ '@odata.type' = $inc; groupId = $o } }) }
                 ) }; break }
-                '*assignmentFilters*' { @{ value = @(@{ id = 'f1'; displayName = 'Windows 11 only' }) }; break }
+                '*assignmentFilters*' { @{ value = @(
+                    @{ id = 'f1'; displayName = 'Windows 11 devices' }
+                    @{ id = 'f2'; displayName = 'All Cloud PCs' }) }; break }
                 default { @{ value = @() } }
             }
         }
@@ -2284,7 +2297,7 @@ Describe 'Intune assignments (mocked Graph)' {
 
     It 'lists what reaches a user: through their groups, and All users' {
         $rows = @(Get-IntuneAssignment -User pat@contoso.com -WarningAction SilentlyContinue)
-        $rows.Count | Should -Be 4
+        $rows.Count | Should -Be 8
         $byName = @{}; foreach ($r in $rows) { $byName[$r.Name] = "$($r.Assignment) via $($r.Group)" }
         $byName['Clear temp'] | Should -Be 'Include via All Pilots'
         $byName['Fix VPN']    | Should -Be 'Exclude via All Pilots'
@@ -2298,7 +2311,14 @@ Describe 'Intune assignments (mocked Graph)' {
         # Groups by name, All users last.
         @($rows.Group | Select-Object -Unique) | Should -Be @('All Pilots', 'Other', 'All users')
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
-            "$Object" -eq 'Pat Pilot (pat@contoso.com): 3 included, 1 excluded (member of 2 groups)' }
+            "$Object" -eq 'Pat Pilot (pat@contoso.com): 7 included, 1 excluded (member of 2 groups)' }
+    }
+
+    It 'tells same-named apps apart by version, or by date added where the versions match' {
+        $rows  = @(Get-IntuneAssignment -User pat@contoso.com -WarningAction SilentlyContinue)
+        $names = @($rows | Where-Object Group -EQ 'Other' | Where-Object Type -Like 'App*').Name
+        $names | Should -Be @('Notepad++ (added 2024-01-10)', 'Notepad++ (added 2024-06-01)', 'Wireshark 4.4.0', 'Wireshark 4.4.5')
+        $rows.Name | Should -Contain 'Company Portal'   # a name only one app has stays as it is
     }
 
     It 'stops when the user cannot be found' {
@@ -2357,7 +2377,9 @@ Describe 'Intune assignments (mocked Graph)' {
         $rows = @(Get-IntuneAssignment 'Pilot Devices' -WarningAction SilentlyContinue)
         @($rows | Where-Object Name -EQ '7-Zip').Type | Should -Be @('Win32 app (required)', 'Win32 app (uninstall)')
         @($rows | Where-Object Name -EQ 'Wi-Fi').Intent | Should -Be 'apply'   # kept on the row, just not in Type
-        ($rows | Where-Object Name -EQ 'BitLocker').Filter | Should -Be 'Windows 11 only (include)'
+        # Mode first, so a narrow console truncates the name, not the mode.
+        ($rows | Where-Object Name -EQ 'BitLocker').Filter | Should -Be 'only Windows 11 devices'
+        ($rows | Where-Object Name -EQ 'Edge').Filter      | Should -Be 'except All Cloud PCs'
         ($rows | Where-Object Name -EQ 'VPN').Filter | Should -BeNullOrEmpty
     }
 

@@ -37,8 +37,12 @@ function Get-IntuneAssignment {
         page, Enrollment restriction, Windows Hello for Business or Windows
         backup and restore. App rows name the app's kind and carry their
         intent, so 'Win32 app (required)' and 'Store app (uninstall)' read
-        apart at a glance, as do two apps that share a name. Filter names the
-        assignment filter that narrows a row further.
+        apart at a glance. Two apps that share a name, usually an old and a
+        new package of the same app, get their version added to Name, or the
+        date they were added where the versions match. Filter names the
+        assignment filter that narrows a row: 'only <filter>' when it picks
+        the devices that get the assignment, 'except <filter>' when it picks
+        the ones that don't.
 
         -Group lists direct assignments by default. -Inherited adds the
         assignments of every group this one belongs to, directly or further
@@ -347,6 +351,7 @@ function Get-IntuneAssignment {
     $rows        = [System.Collections.Generic.List[object]]::new()
     $unread      = [System.Collections.Generic.List[string]]::new()
     $filterNames = $null   # assignment filter id -> name, fetched on first use
+    $appInfo     = @{}     # app id -> version and date added, for same-named apps
     $viaParent   = 0       # -Group rows that reach the group through a parent
     $allUsers    = 0       # All users / All devices assignments, counted
     $allDevices  = 0       # under -Group -Inherited
@@ -364,6 +369,12 @@ function Get-IntuneAssignment {
                 }
                 $type = $src.Type
                 if ($src.Kind) { $type = (& $src.Kind $item) ?? $type }
+                if ($src.Type -eq 'App') {
+                    $appInfo[$item.id] = [pscustomobject]@{
+                        Version = $item.displayVersion
+                        Added   = if ($item.createdDateTime) { ([datetime]$item.createdDateTime).ToString('yyyy-MM-dd') }
+                    }
+                }
 
                 foreach ($a in $assignments) {
                     $t         = $a.target
@@ -405,7 +416,10 @@ function Get-IntuneAssignment {
                                 }
                             } catch { Write-Debug "assignment filter names unavailable: $($_.Exception.Message)" }
                         }
-                        $filterText = "$($filterNames[$filterId] ?? $filterId) ($filterType)"
+                        # The mode leads, so a narrow console cuts the filter's
+                        # name rather than whether it lets devices in or out.
+                        $narrows    = if ($filterType -eq 'include') { 'only' } else { 'except' }
+                        $filterText = "$narrows $($filterNames[$filterId] ?? $filterId)"
                     } else {
                         $filterId = $null
                     }
@@ -434,6 +448,21 @@ function Get-IntuneAssignment {
         }
     }
     Write-Progress -Activity 'Reading Intune assignments' -Completed
+
+    # Two apps with one name are usually an old and a new package of the same
+    # app (an Enterprise App Catalog update adds a new one), and their rows
+    # would look identical. The version tells them apart; where the versions
+    # match, the date each was added does.
+    $sameName = $rows | Where-Object { $appInfo.ContainsKey($_.PolicyId) } | Group-Object Name |
+        Where-Object { @($_.Group.PolicyId | Select-Object -Unique).Count -gt 1 }
+    foreach ($set in $sameName) {
+        $ids       = @($set.Group.PolicyId | Select-Object -Unique)
+        $byVersion = @($ids | ForEach-Object { $appInfo[$_].Version } | Where-Object { $_ } | Select-Object -Unique).Count -eq $ids.Count
+        foreach ($r in $set.Group) {
+            $info   = $appInfo[$r.PolicyId]
+            $r.Name = if ($byVersion) { "$($r.Name) $($info.Version)" } else { "$($r.Name) (added $($info.Added))" }
+        }
+    }
 
     if ($unread.Count) {
         Write-Warning ("Not every surface could be read, so assignments there may be missing: " + ($unread -join '; '))
