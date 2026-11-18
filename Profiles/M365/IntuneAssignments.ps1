@@ -25,11 +25,23 @@ function Get-IntuneGroupAssignment {
         protection. Not read: terms and conditions, macOS custom attribute
         scripts, Windows Information Protection, Cloud PC, and RBAC.
 
-        Direct assignments only. A policy assigned to a parent group that
-        nests this one, or to All users / All devices, reaches this group's
-        members too but isn't listed here. Filter names the assignment filter
-        that narrows a row further. App rows carry their intent in Type, so
-        'App (required)' and 'App (uninstall)' read apart at a glance.
+        Type is finer than the surface where one surface holds several kinds
+        of thing: a Settings Catalog row reads Security baseline, Endpoint
+        security (Antivirus) or Endpoint Privilege Management when that's what
+        it is, an update ring reads Update ring rather than Device
+        configuration, and an enrollment configuration reads Enrollment status
+        page, Enrollment restriction or Windows Hello for Business. App rows
+        carry their intent, so 'App (required)' and 'App (uninstall)' read
+        apart at a glance. Filter names the assignment filter that narrows a
+        row further.
+
+        Direct assignments by default. -Inherited adds the assignments of
+        every group this one belongs to, directly or further up, since those
+        reach its members too. Such rows read 'Include (via <parent>)' or
+        'Exclude (via <parent>)', and their Group and GroupId name the parent.
+        All users and All devices reach members as well; -Inherited counts
+        those in the summary line instead of listing them, because in most
+        tenants they would crowd out everything else.
 
         A surface that can't be read (missing permission or license) is named
         in a warning rather than skipped silently, so an empty result means
@@ -39,15 +51,24 @@ function Get-IntuneGroupAssignment {
         The group's display name (exact match) or object id. Display names
         aren't unique in Entra ID; when a name matches more than one group the
         command stops and lists their ids.
+    .PARAMETER Inherited
+        Also list what reaches the group through the groups it belongs to,
+        and count All users / All devices assignments in the summary line.
+        Costs one extra directory read.
     .EXAMPLE
         Get-IntuneGroupAssignment 'Pilot Devices'
 
         Every profile, policy, script and app assigned to or excluding the
         group, with the include/exclude counts on top.
     .EXAMPLE
-        Get-IntuneGroupAssignment 'Pilot Devices' | Where-Object Assignment -EQ Exclude
+        Get-IntuneGroupAssignment 'Pilot Devices' -Inherited
 
-        Only the exclusions.
+        Adds what the group gets through its parent groups, each such row
+        marked with the parent it comes through.
+    .EXAMPLE
+        Get-IntuneGroupAssignment 'Pilot Devices' -Inherited | Where-Object Assignment -Like 'Exclude*'
+
+        Only the exclusions, inherited ones included.
     .EXAMPLE
         Get-IntuneGroupAssignment 'Pilot Devices' | Format-List
 
@@ -58,7 +79,9 @@ function Get-IntuneGroupAssignment {
     [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory, Position = 0)]
-        [string] $Group
+        [string] $Group,
+
+        [switch] $Inherited
     )
 
     if (-not (Get-MgContext)) {
@@ -93,12 +116,63 @@ function Get-IntuneGroupAssignment {
         $groupName = $found[0].displayName
     }
 
+    # Group id -> name of the parent group an assignment reaches this one
+    # through; $null for the group itself. Without -Inherited it's the only key.
+    $targets = @{ $groupId = $null }
+    if ($Inherited) {
+        try {
+            # No query options: an OData cast or $filter on this endpoint
+            # needs the ConsistencyLevel header, which Get-MgGraphAllPage
+            # doesn't send. The type check does the cast's job; the list also
+            # holds directory roles and administrative units.
+            foreach ($p in Get-MgGraphAllPage -Uri "v1.0/groups/$groupId/transitiveMemberOf") {
+                if ($p.'@odata.type' -eq '#microsoft.graph.group') { $targets[$p.id] = $p.displayName ?? $p.id }
+            }
+        } catch {
+            Write-Warning "Couldn't read the groups $groupName belongs to, so only its direct assignments are listed: $(($_.Exception.Message -split '\r?\n', 2)[0])"
+        }
+    }
+
+    # Finer labels for surfaces that hold several kinds of thing; anything not
+    # listed keeps the surface's own label. Each surface names the kind in a
+    # different place. Enrollment defaults are left out: they always target
+    # All users or All devices, so they never make a row.
+    $catalogKinds = @{   # templateReference.templateFamily
+        baseline                                     = 'Security baseline'
+        endpointSecurityAntivirus                    = 'Endpoint security (Antivirus)'
+        endpointSecurityDiskEncryption               = 'Endpoint security (Disk encryption)'
+        endpointSecurityFirewall                     = 'Endpoint security (Firewall)'
+        endpointSecurityEndpointDetectionAndResponse = 'Endpoint security (EDR)'
+        endpointSecurityAttackSurfaceReduction       = 'Endpoint security (ASR)'
+        endpointSecurityAccountProtection            = 'Endpoint security (Account protection)'
+        endpointSecurityApplicationControl           = 'Endpoint security (App Control)'
+        endpointSecurityEndpointPrivilegeManagement  = 'Endpoint Privilege Management'
+        appQuietTime                                 = 'Quiet time'
+    }
+    $configKinds = @{   # @odata.type
+        '#microsoft.graph.windowsUpdateForBusinessConfiguration' = 'Update ring'
+        '#microsoft.graph.iosUpdateConfiguration'                = 'Update policy (iOS)'
+        '#microsoft.graph.macOSSoftwareUpdateConfiguration'      = 'Update policy (macOS)'
+    }
+    $enrollmentKinds = @{   # deviceEnrollmentConfigurationType
+        windows10EnrollmentCompletionPageConfiguration = 'Enrollment status page'
+        platformRestrictions                           = 'Enrollment restriction (platform)'
+        singlePlatformRestriction                      = 'Enrollment restriction (platform)'
+        limit                                          = 'Enrollment restriction (limit)'
+        windowsHelloForBusiness                        = 'Windows Hello for Business'
+        deviceComanagementAuthorityConfiguration       = 'Co-management settings'
+        enrollmentNotificationsConfiguration           = 'Enrollment notification'
+    }
+
     # Every assignable surface, in the order they're read. NoExpand marks a
     # collection that doesn't take $expand=assignments; its items are read one
     # at a time, the same fallback used when a collection ignores the expand.
+    # Kind, where present, picks the finer label for an item.
     $sources = @(
-        @{ Type = 'Device configuration';       Uri = 'beta/deviceManagement/deviceConfigurations' }
-        @{ Type = 'Settings catalog';           Uri = 'beta/deviceManagement/configurationPolicies' }
+        @{ Type = 'Device configuration';       Uri = 'beta/deviceManagement/deviceConfigurations'
+           Kind = { param($i) $configKinds["$($i.'@odata.type')"] } }
+        @{ Type = 'Settings catalog';           Uri = 'beta/deviceManagement/configurationPolicies'
+           Kind = { param($i) $catalogKinds["$($i.templateReference.templateFamily)"] } }
         @{ Type = 'Administrative template';    Uri = 'beta/deviceManagement/groupPolicyConfigurations' }
         @{ Type = 'Compliance';                 Uri = 'beta/deviceManagement/deviceCompliancePolicies' }
         @{ Type = 'Endpoint security (legacy)'; Uri = 'beta/deviceManagement/intents'; NoExpand = $true }
@@ -109,7 +183,8 @@ function Get-IntuneGroupAssignment {
         @{ Type = 'Quality update';             Uri = 'beta/deviceManagement/windowsQualityUpdateProfiles' }
         @{ Type = 'Driver update';              Uri = 'beta/deviceManagement/windowsDriverUpdateProfiles' }
         @{ Type = 'Autopilot profile';          Uri = 'beta/deviceManagement/windowsAutopilotDeploymentProfiles' }
-        @{ Type = 'Enrollment configuration';   Uri = 'beta/deviceManagement/deviceEnrollmentConfigurations' }
+        @{ Type = 'Enrollment configuration';   Uri = 'beta/deviceManagement/deviceEnrollmentConfigurations'
+           Kind = { param($i) $enrollmentKinds["$($i.deviceEnrollmentConfigurationType)"] } }
         @{ Type = 'App';                        Uri = 'beta/deviceAppManagement/mobileApps' }
         @{ Type = 'App configuration';          Uri = 'beta/deviceAppManagement/mobileAppConfigurations' }
         @{ Type = 'App configuration (MAM)';    Uri = 'beta/deviceAppManagement/targetedManagedAppConfigurations' }
@@ -121,6 +196,9 @@ function Get-IntuneGroupAssignment {
     $rows        = [System.Collections.Generic.List[object]]::new()
     $unread      = [System.Collections.Generic.List[string]]::new()
     $filterNames = $null   # assignment filter id -> name, fetched on first use
+    $viaParent   = 0       # rows that reach the group through a parent
+    $allUsers    = 0       # All users / All devices assignments, counted
+    $allDevices  = 0       # under -Inherited
     $done        = 0
     foreach ($src in $sources) {
         Write-Progress -Activity 'Reading Intune assignments' -Status $src.Type -PercentComplete (100 * $done++ / $sources.Count)
@@ -133,13 +211,26 @@ function Get-IntuneGroupAssignment {
                 if ($null -eq $assignments) {
                     $assignments = Get-MgGraphAllPage -Uri "$($src.Uri)/$($item.id)/assignments"
                 }
+                $type = $src.Type
+                if ($src.Kind) { $type = (& $src.Kind $item) ?? $type }
+
                 foreach ($a in $assignments) {
-                    $t = $a.target
-                    if ($t.groupId -ne $groupId) { continue }
+                    $t         = $a.target
+                    $odataType = "$($t.'@odata.type')"
+                    $tid       = "$($t.groupId)"   # '' for targets without a group
+                    if (-not $tid -or -not $targets.ContainsKey($tid)) {
+                        if ($Inherited) {
+                            switch ($odataType) {
+                                '#microsoft.graph.allLicensedUsersAssignmentTarget' { $allUsers++ }
+                                '#microsoft.graph.allDevicesAssignmentTarget'       { $allDevices++ }
+                            }
+                        }
+                        continue
+                    }
                     # Exact types, not a '*groupAssignmentTarget' wildcard:
                     # scopeTagGroupAssignmentTarget would match that too, and
                     # it isn't an assignment to the group.
-                    $mode = switch ("$($t.'@odata.type')") {
+                    $mode = switch ($odataType) {
                         '#microsoft.graph.groupAssignmentTarget'          { 'Include' }
                         '#microsoft.graph.exclusionGroupAssignmentTarget' { 'Exclude' }
                     }
@@ -162,16 +253,18 @@ function Get-IntuneGroupAssignment {
                         $filterId = $null
                     }
 
+                    $via = $targets[$tid]
+                    if ($via) { $viaParent++ }
                     $rows.Add([pscustomobject]@{
-                        Type       = if ($a.intent) { "$($src.Type) ($($a.intent))" } else { $src.Type }
+                        Type       = if ($a.intent) { "$type ($($a.intent))" } else { $type }
                         Name       = $item.displayName ?? $item.name   # Settings Catalog says `name`
-                        Assignment = $mode
+                        Assignment = if ($via) { "$mode (via $via)" } else { $mode }
                         Filter     = $filterText
                         Intent     = $a.intent
                         PolicyId   = $item.id
                         FilterId   = $filterId
-                        Group      = $groupName
-                        GroupId    = $groupId
+                        Group      = $via ?? $groupName
+                        GroupId    = if ($via) { $tid } else { $groupId }
                     })
                 }
             }
@@ -187,12 +280,13 @@ function Get-IntuneGroupAssignment {
 
     # Summary before any row, so it lands above the table rather than inside it.
     $label   = if ($groupName -ne $groupId) { "$groupName ($groupId)" } else { $groupId }
-    $include = @($rows | Where-Object Assignment -EQ 'Include').Count
-    if ($rows.Count) {
-        Write-Host "${label}: $include included, $($rows.Count - $include) excluded" -ForegroundColor Cyan
-    } else {
-        Write-Host "${label}: no direct Intune assignments found" -ForegroundColor Cyan
-    }
+    $include = @($rows | Where-Object Assignment -Like 'Include*').Count
+    $summary = if ($rows.Count) { "$include included, $($rows.Count - $include) excluded" }
+               elseif ($Inherited) { 'no direct or inherited Intune assignments found' }
+               else { 'no direct Intune assignments found' }
+    if ($viaParent) { $summary += " ($viaParent inherited)" }
+    if ($allUsers -or $allDevices) { $summary += "; not listed: $allUsers to All users, $allDevices to All devices" }
+    Write-Host "${label}: $summary" -ForegroundColor Cyan
 
     foreach ($r in $rows | Sort-Object Type, Name) {
         # Four columns, not five: PowerShell renders a display set of five or
