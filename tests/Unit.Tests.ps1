@@ -2122,8 +2122,23 @@ Describe 'Intune assignments (mocked Graph)' {
 
     BeforeAll {
         # Same stub-then-mock pattern as the overview-data suite above.
-        function Invoke-MgGraphRequest { param($Method, $Uri, $ErrorAction) throw "stub not mocked: $Method $Uri (ErrorAction=$ErrorAction)" }
+        function Invoke-MgGraphRequest { param($Method, $Uri, $Body, $ContentType, $OutputType, $ErrorAction) throw "stub not mocked: $Method $Uri (ErrorAction=$ErrorAction)" }
         function Get-MgContext { }
+
+        # evaluateAssignmentFilter answers with a report rather than an OData
+        # object (Columns, then Values as rows), read off an HttpResponseMessage.
+        # Columns here are in a different order from the real one on purpose.
+        function New-FilterReport {
+            param([object[]] $Values = @())
+            $json = @{
+                TotalRowCount = $Values.Count
+                Columns       = @(@{ Name = 'deviceName'; Type = 'String' }, @{ Name = 'deviceId'; Type = 'String' })
+                Values        = $Values
+            } | ConvertTo-Json -Depth 4 -Compress
+            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::OK)
+            $response.Content = [System.Net.Http.StringContent]::new($json)
+            $response
+        }
 
         Mock Get-MgContext { [pscustomobject]@{ TenantId = 'tid' } }
         Mock Write-Host { }   # the summary line; asserted where it matters
@@ -2141,7 +2156,8 @@ Describe 'Intune assignments (mocked Graph)' {
             $inc = '#microsoft.graph.groupAssignmentTarget'
             $exc = '#microsoft.graph.exclusionGroupAssignmentTarget'
             $grp = '#microsoft.graph.group'
-            $laptop   = @{ id = 'eeeeeeee-0000-0000-0000-000000000005'; displayName = 'LAPTOP-1'; approximateLastSignInDateTime = '2026-11-01T08:00:00Z' }
+            $laptop   = @{ id = 'eeeeeeee-0000-0000-0000-000000000005'; deviceId = 'ffffffff-0000-0000-0000-000000000006'
+                           displayName = 'LAPTOP-1'; approximateLastSignInDateTime = '2026-11-01T08:00:00Z' }
             $notFound = 'Response status code does not indicate success: NotFound (Not Found).'
             # Every case breaks: switch runs EVERY matching case, and the
             # per-item URIs also match their collection's pattern.
@@ -2167,6 +2183,24 @@ Describe 'Intune assignments (mocked Graph)' {
                 '*managedDevices/*' {
                     if ($Uri -like '*11111111-0000*') { @{ azureADDeviceId = 'ffffffff-0000-0000-0000-000000000006' } } else { throw $notFound }
                     break }
+                # By Entra device id: the live record, and a stale one left by a re-enrollment.
+                '*managedDevices`?*' {
+                    if ($Uri -like '*ffffffff-0000*') { @{ value = @(
+                        @{ id = '12121212-0000-0000-0000-00000000000c'; deviceName = 'LAPTOP-1'; lastSyncDateTime = '2026-01-15T08:00:00Z' }
+                        @{ id = '11111111-0000-0000-0000-000000000008'; deviceName = 'LAPTOP-1'; lastSyncDateTime = '2026-11-18T08:00:00Z' }) } }
+                    else { @{ value = @() } }
+                    break }
+                # LAPTOP-1 runs Windows 10 and isn't a Cloud PC, so it matches
+                # neither rule. Searching its name also finds LAPTOP-10, on
+                # Windows 11, so a match has to be on the id.
+                '*evaluateAssignmentFilter*' {
+                    $rule = ($Body | ConvertFrom-Json).data.rule
+                    # The stale record matches too: only the live one may count.
+                    if ($rule -like '*osVersion*') { New-FilterReport @(
+                        , @('LAPTOP-10', '22222222-0000-0000-0000-00000000000b')
+                        , @('LAPTOP-1',  '12121212-0000-0000-0000-00000000000c')) }
+                    else { New-FilterReport }
+                    break }
                 '*v1.0/devices/*' { if ($Uri -like '*eeeeeeee-0000*') { $laptop } else { throw $notFound }; break }
                 '*v1.0/devices`?*' {
                     if ($Uri -like '*LAPTOP-1*' -or $Uri -like '*ffffffff-0000*') { @{ value = @($laptop) } }
@@ -2187,7 +2221,8 @@ Describe 'Intune assignments (mocked Graph)' {
                         @{ intent = 'apply'; target = @{ '@odata.type' = $inc; groupId = $o } }) }
                     @{ id = 'dc2'; displayName = 'VPN';   assignments = @(@{ target = @{ '@odata.type' = $exc; groupId = $g } }) }
                     @{ id = 'dc3'; displayName = 'Kiosk'; assignments = @(
-                        @{ target = @{ '@odata.type' = $allDevices } }
+                        @{ target = @{ '@odata.type' = $allDevices
+                            deviceAndAppManagementAssignmentFilterId = 'f2'; deviceAndAppManagementAssignmentFilterType = 'exclude' } }
                         @{ target = @{ '@odata.type' = $exc; groupId = $k } }) }
                     @{ id = 'dc4'; displayName = 'Ring 1'; '@odata.type' = '#microsoft.graph.windowsUpdateForBusinessConfiguration'
                        assignments = @(@{ target = @{ '@odata.type' = $inc; groupId = $g } }) }
@@ -2238,8 +2273,10 @@ Describe 'Intune assignments (mocked Graph)' {
                        assignments = @(@{ intent = 'available'; target = @{ '@odata.type' = $inc; groupId = $o } }) }
                 ) }; break }
                 '*assignmentFilters*' { @{ value = @(
-                    @{ id = 'f1'; displayName = 'Windows 11 devices' }
-                    @{ id = 'f2'; displayName = 'All Cloud PCs' }) }; break }
+                    @{ id = 'f1'; displayName = 'Windows 11 devices'; platform = 'windows10AndLater'; assignmentFilterManagementType = 'devices'
+                       rule = '(device.osVersion -startsWith "10.0.22")' }
+                    @{ id = 'f2'; displayName = 'All Cloud PCs'; platform = 'windows10AndLater'; assignmentFilterManagementType = 'devices'
+                       rule = '(device.model -contains "Cloud PC")' }) }; break }
                 default { @{ value = @() } }
             }
         }
@@ -2257,6 +2294,7 @@ Describe 'Intune assignments (mocked Graph)' {
         $rows.Name | Should -Not -Contain 'Clear temp'
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { "$Object" -eq 'Pilot Devices (aaaaaaaa-0000-0000-0000-000000000001): 9 included, 2 excluded' }
         Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*transitiveMemberOf*' }
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*evaluateAssignmentFilter' }   # filters are per device
     }
 
     It 'labels the kinds a surface holds, falling back to the surface' {
@@ -2312,6 +2350,7 @@ Describe 'Intune assignments (mocked Graph)' {
         @($rows.Group | Select-Object -Unique) | Should -Be @('All Pilots', 'Other', 'All users')
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
             "$Object" -eq 'Pat Pilot (pat@contoso.com): 7 included, 1 excluded (member of 2 groups)' }
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*evaluateAssignmentFilter' }   # a user's devices can differ
     }
 
     It 'tells same-named apps apart by version, or by date added where the versions match' {
@@ -2339,7 +2378,7 @@ Describe 'Intune assignments (mocked Graph)' {
         # Groups by name, All devices last.
         @($rows.Group | Select-Object -Unique) | Should -Be @('All Pilots', 'Kiosk Exclusions', 'Pilot Devices', 'All devices')
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
-            "$Object" -eq 'LAPTOP-1 (eeeeeeee-0000-0000-0000-000000000005): 12 included, 4 excluded (member of 3 groups)' }
+            "$Object" -eq 'LAPTOP-1 (eeeeeeee-0000-0000-0000-000000000005): 12 included (1 filtered out), 4 excluded (member of 3 groups)' }
     }
 
     It 'names a policy that both includes and excludes the subject' {
@@ -2348,6 +2387,58 @@ Describe 'Intune assignments (mocked Graph)' {
         # required include and uninstall exclude are different intents, so no.
         Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
             "$Object" -eq 'Both included and excluded, so the exclusion wins: Kiosk' }
+    }
+
+    It 'checks each assignment filter against the device, matching on its live Intune record' {
+        $rows = @(Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue)
+        # BitLocker: only Windows 11 devices. The search also returns LAPTOP-10
+        # and LAPTOP-1's stale record, and neither is this device.
+        $bitLocker = $rows | Where-Object Name -EQ 'BitLocker'
+        $bitLocker.FilteredOut | Should -Be $true
+        $bitLocker.Assignment  | Should -Be 'Include'   # the property stays; only the table says Filtered out
+        $bitLocker.FilterType  | Should -Be 'include'
+        # Edge: except Cloud PCs, which it isn't, so Edge still applies.
+        ($rows | Where-Object Name -EQ 'Edge').FilteredOut | Should -Be $false
+        ($rows | Where-Object Name -EQ 'VPN').FilteredOut  | Should -BeNullOrEmpty   # no filter, nothing to check
+        # One call per filter (f2 is on Edge and Kiosk), by the live record's name.
+        Should -Invoke Invoke-MgGraphRequest -Times 2 -Exactly -Scope It -ParameterFilter { $Uri -like '*evaluateAssignmentFilter' }
+        Should -Invoke Invoke-MgGraphRequest -Times 2 -Exactly -Scope It -ParameterFilter {
+            $Uri -like '*evaluateAssignmentFilter' -and $OutputType -eq 'HttpResponseMessage' -and ($Body | ConvertFrom-Json).data.search -eq 'LAPTOP-1' }
+        $line = ($rows | Out-String -Width 200) -split '\r?\n' | Where-Object { $_ -match 'BitLocker' }
+        $line | Should -Match 'Filtered out\s+only Windows 11 devices'
+    }
+
+    It 'rules the device out where an except filter matches, and drops that include from the conflict line' {
+        Mock Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*evaluateAssignmentFilter' } {
+            New-FilterReport @(, @('LAPTOP-1', '11111111-0000-0000-0000-000000000008')) }
+        $rows = @(Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue)
+        ($rows | Where-Object Name -EQ 'BitLocker').FilteredOut | Should -Be $false
+        ($rows | Where-Object Name -EQ 'Edge').FilteredOut      | Should -Be $true
+        # Kiosk's All devices include is ruled out too, so there's no longer an
+        # include for its exclusion to win over.
+        ($rows | Where-Object { $_.Name -eq 'Kiosk' -and $_.Assignment -eq 'Include' }).FilteredOut | Should -Be $true
+        Should -Invoke Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { "$Object" -like 'Both included and excluded*' }
+        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
+            "$Object" -eq 'LAPTOP-1 (eeeeeeee-0000-0000-0000-000000000005): 12 included (2 filtered out), 4 excluded (member of 3 groups)' }
+    }
+
+    It 'leaves a row unmarked and names the filter when the check fails' {
+        Mock Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*evaluateAssignmentFilter' -and $Body -like '*osVersion*' } {
+            throw "Response status code does not indicate success: BadRequest (Bad Request).`nmore detail" }
+        $rows = @(Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue -WarningVariable w)
+        ($rows | Where-Object Name -EQ 'BitLocker').FilteredOut | Should -BeNullOrEmpty
+        ($rows | Where-Object Name -EQ 'Edge').FilteredOut      | Should -Be $false   # the other filter is still checked
+        "$w" | Should -BeLike "*Couldn't check these assignment filters against LAPTOP-1, so their rows aren't marked: Windows 11 devices (Response status code does not indicate success: BadRequest (Bad Request).)*"
+        Should -Invoke Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
+            "$Object" -eq 'LAPTOP-1 (eeeeeeee-0000-0000-0000-000000000005): 12 included, 4 excluded (member of 3 groups)' }
+    }
+
+    It 'checks no filters, and says so, when the device has no Intune record' {
+        Mock Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*managedDevices`?*' } { @{ value = @() } }
+        $rows = @(Get-IntuneAssignment -Device LAPTOP-1 -WarningAction SilentlyContinue -WarningVariable w)
+        @($rows | Where-Object { $null -ne $_.FilteredOut }).Count | Should -Be 0
+        "$w" | Should -BeLike "*LAPTOP-1 has no Intune record, so its assignment filters weren't checked.*"
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*evaluateAssignmentFilter' }
     }
 
     It 'says nothing about conflicts when there are none' {

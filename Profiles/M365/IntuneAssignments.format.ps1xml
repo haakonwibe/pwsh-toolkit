@@ -3,7 +3,10 @@
   Default view for Get-IntuneAssignment rows: a table grouped by the group
   each assignment comes through, the way Get-ChildItem heads each directory.
   The group name sits in the heading, so it can't be cut off at the right edge
-  of the console, and Assignment stays a short Include or Exclude.
+  of the console, and Assignment stays a short Include or Exclude, or
+  'Filtered out' where -Device found that the row's filter rules the device
+  out. The column says so rather than the Filter column because Filter is
+  last and the first to be truncated; the property stays Include.
   Get-IntuneAssignment loads this file on first use and emits its rows already
   sorted by group, which is what GroupBy expects.
 -->
@@ -30,7 +33,7 @@
             <TableColumnItems>
               <TableColumnItem><PropertyName>Type</PropertyName></TableColumnItem>
               <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
-              <TableColumnItem><PropertyName>Assignment</PropertyName></TableColumnItem>
+              <TableColumnItem><ScriptBlock>if ($_.FilteredOut) { 'Filtered out' } else { $_.Assignment }</ScriptBlock></TableColumnItem>
               <TableColumnItem><PropertyName>Filter</PropertyName></TableColumnItem>
             </TableColumnItems>
           </TableRowEntry>

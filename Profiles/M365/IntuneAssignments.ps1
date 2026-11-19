@@ -58,8 +58,17 @@ function Get-IntuneAssignment {
         device). When one policy both includes and excludes them through
         different groups, the exclusion wins, and a second summary line names
         those policies, since their rows sit under different headings.
-        Otherwise this is targeting, not a verdict: an assignment filter can
-        still rule a device out.
+
+        -Device also checks each assignment filter against the device, the
+        same check as Preview devices in the filter editor: it judges the
+        properties Intune holds for the device now, not what was evaluated
+        at its last check-in. A row whose filter rules the device out reads
+        'Filtered out' in the Assignment column, and the summary line counts
+        them. The Assignment property itself stays Include; FilteredOut says
+        which rows are ruled out ($null where nothing was checked). Filters
+        on managed-app assignments judge the app rather than the device, so
+        they're left unchecked. -User doesn't check filters, since each of a
+        user's devices can answer differently.
 
         A surface that can't be read (missing permission or license) is named
         in a warning rather than skipped silently, so an empty result means
@@ -99,6 +108,11 @@ function Get-IntuneAssignment {
         Get-IntuneAssignment -Device LAPTOP-1 | Where-Object Assignment -EQ 'Exclude'
 
         The exclusions that reach one device, and the groups they come through.
+    .EXAMPLE
+        Get-IntuneAssignment -Device LAPTOP-1 | Where-Object FilteredOut
+
+        The assignments that reach the device's groups but whose filter rules
+        the device out.
     .EXAMPLE
         Get-IntuneAssignment 'Pilot Devices' | Format-List
 
@@ -202,7 +216,7 @@ function Get-IntuneAssignment {
             # Groups hold the Entra device object, so whichever id or name
             # arrives has to become that object. Three ids name a device: the
             # Entra object id, the Entra device id, and the Intune device id.
-            $fields   = '$select=id,displayName,approximateLastSignInDateTime'
+            $fields   = '$select=id,deviceId,displayName,approximateLastSignInDateTime'
             $byDevice = { param($id) Get-MgGraphAllPage -Uri ("v1.0/devices?`$filter=" + [uri]::EscapeDataString("deviceId eq '$id'") + "&$fields") }
             $found = @(
                 if ($Device -as [guid]) {
@@ -350,7 +364,7 @@ function Get-IntuneAssignment {
 
     $rows        = [System.Collections.Generic.List[object]]::new()
     $unread      = [System.Collections.Generic.List[string]]::new()
-    $filterNames = $null   # assignment filter id -> name, fetched on first use
+    $filters     = $null   # assignment filter id -> filter, fetched on first use
     $appInfo     = @{}     # app id -> version and date added, for same-named apps
     $viaParent   = 0       # -Group rows that reach the group through a parent
     $allUsers    = 0       # All users / All devices assignments, counted
@@ -408,20 +422,23 @@ function Get-IntuneAssignment {
                     $filterType = $t.deviceAndAppManagementAssignmentFilterType
                     $filterText = $null
                     if ($filterId -and $filterType -in 'include', 'exclude') {
-                        if ($null -eq $filterNames) {
-                            $filterNames = @{}
+                        if ($null -eq $filters) {
+                            # The rule and platform come along for -Device,
+                            # which checks each filter against the device.
+                            $filters = @{}
                             try {
-                                foreach ($f in Get-MgGraphAllPage -Uri 'beta/deviceManagement/assignmentFilters?$select=id,displayName') {
-                                    $filterNames[$f.id] = $f.displayName
+                                foreach ($f in Get-MgGraphAllPage -Uri 'beta/deviceManagement/assignmentFilters?$select=id,displayName,platform,rule,assignmentFilterManagementType') {
+                                    $filters[$f.id] = $f
                                 }
-                            } catch { Write-Debug "assignment filter names unavailable: $($_.Exception.Message)" }
+                            } catch { Write-Debug "assignment filters unavailable: $($_.Exception.Message)" }
                         }
                         # The mode leads, so a narrow console cuts the filter's
                         # name rather than whether it lets devices in or out.
                         $narrows    = if ($filterType -eq 'include') { 'only' } else { 'except' }
-                        $filterText = "$narrows $($filterNames[$filterId] ?? $filterId)"
+                        $filterText = "$narrows $($filters[$filterId].displayName ?? $filterId)"
                     } else {
-                        $filterId = $null
+                        $filterId   = $null
+                        $filterType = $null
                     }
 
                     if ($via) { $viaParent++ }
@@ -430,16 +447,18 @@ function Get-IntuneAssignment {
                     # profile's rare 'remove') tell the reader something.
                     $intent = if ($a.intent -and $a.intent -ne 'apply') { $a.intent }
                     $rows.Add([pscustomobject]@{
-                        PSTypeName = 'PwshToolkit.IntuneAssignment'   # the grouped table view
-                        Type       = if ($intent) { "$type ($intent)" } else { $type }
-                        Name       = $item.displayName ?? $item.name   # Settings Catalog says `name`
-                        Assignment = $mode
-                        Filter     = $filterText
-                        Intent     = $a.intent
-                        PolicyId   = $item.id
-                        FilterId   = $filterId
-                        Group      = $toName
-                        GroupId    = $toId
+                        PSTypeName  = 'PwshToolkit.IntuneAssignment'   # the grouped table view
+                        Type        = if ($intent) { "$type ($intent)" } else { $type }
+                        Name        = $item.displayName ?? $item.name   # Settings Catalog says `name`
+                        Assignment  = $mode
+                        Filter      = $filterText
+                        FilteredOut = $null   # -Device fills it in below
+                        Intent      = $a.intent
+                        PolicyId    = $item.id
+                        FilterId    = $filterId
+                        FilterType  = $filterType
+                        Group       = $toName
+                        GroupId     = $toId
                     })
                 }
             }
@@ -468,12 +487,77 @@ function Get-IntuneAssignment {
         Write-Warning ("Not every surface could be read, so assignments there may be missing: " + ($unread -join '; '))
     }
 
+    # -Device: whether each assignment filter matches the device. This is the
+    # filter editor's Preview devices (evaluateAssignmentFilter), so it judges
+    # the properties Intune holds for the device now; the per-device record of
+    # what was evaluated at check-in (getAssignmentFiltersStatusDetails) came
+    # back empty when tried against a live tenant. Filters for managed apps
+    # judge the app, not the device, so they're skipped.
+    if ($PSCmdlet.ParameterSetName -eq 'Device') {
+        $toCheck = @($rows | Where-Object FilterId | ForEach-Object FilterId | Select-Object -Unique |
+            Where-Object { $filters[$_].rule -and $filters[$_].assignmentFilterManagementType -ne 'apps' })
+        $managed = $null
+        if ($toCheck.Count) {
+            try {
+                # Several Intune records can share one Entra device after a
+                # re-enrollment; the one that synced last is the live one.
+                $managed = @(Get-MgGraphAllPage -Uri ("beta/deviceManagement/managedDevices?`$filter=" +
+                        [uri]::EscapeDataString("azureADDeviceId eq '$($d.deviceId)'") + '&$select=id,deviceName,lastSyncDateTime')) |
+                    Sort-Object { $_.lastSyncDateTime } -Descending | Select-Object -First 1
+                if (-not $managed) { Write-Warning "$($d.displayName) has no Intune record, so its assignment filters weren't checked." }
+            } catch {
+                Write-Warning "Couldn't find $($d.displayName) in Intune, so its assignment filters weren't checked: $(($_.Exception.Message -split '\r?\n', 2)[0])"
+            }
+        }
+        if ($managed) {
+            # The response is a report: Columns, then Values as rows. The name
+            # search can also hit other devices (LAPTOP-1 finds LAPTOP-10), so
+            # the match is on the Intune device id.
+            $matchesFilter = {
+                param($Filter)
+                $skip = 0
+                do {
+                    $body = @{ data = @{ platform = $Filter.platform; rule = $Filter.rule; search = $managed.deviceName; top = 100; skip = $skip } } |
+                        ConvertTo-Json -Depth 4 -Compress
+                    $response = Invoke-MgGraphRequest -Method POST -Uri 'beta/deviceManagement/evaluateAssignmentFilter' -Body $body `
+                        -ContentType 'application/json' -OutputType HttpResponseMessage -ErrorAction Stop
+                    try { $page = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json }
+                    finally { $response.Dispose() }
+                    $column = @($page.Columns.Name).IndexOf('deviceId')
+                    if ($column -lt 0) { throw 'the response has no deviceId column' }
+                    $batch = @($page.Values)
+                    foreach ($v in $batch) { if ($v[$column] -eq $managed.id) { return $true } }
+                    $skip += $batch.Count
+                } while ($batch.Count -and $skip -lt $page.TotalRowCount)
+                $false
+            }
+            $matchOf = @{}   # filter id -> whether the device matches it
+            $unknown = [System.Collections.Generic.List[string]]::new()
+            foreach ($id in $toCheck) {
+                try { $matchOf[$id] = & $matchesFilter $filters[$id] }
+                catch { $unknown.Add("$($filters[$id].displayName) ($(($_.Exception.Message -split '\r?\n', 2)[0]))") }
+            }
+            if ($unknown.Count) {
+                Write-Warning ("Couldn't check these assignment filters against $($d.displayName), so their rows aren't marked: " + ($unknown -join '; '))
+            }
+            foreach ($r in $rows) {
+                if ($r.FilterId -and $matchOf.ContainsKey($r.FilterId)) {
+                    # 'only' rules the device out when it doesn't match,
+                    # 'except' when it does.
+                    $r.FilteredOut = if ($r.FilterType -eq 'include') { -not $matchOf[$r.FilterId] } else { $matchOf[$r.FilterId] }
+                }
+            }
+        }
+    }
+
     # Summary before any row, so it lands above the table rather than inside it.
-    $include = @($rows | Where-Object Assignment -EQ 'Include').Count
-    $summary = if ($rows.Count) { "$include included, $($rows.Count - $include) excluded" }
-               elseif (-not $isGroup) { 'no Intune assignments found' }
-               elseif ($Inherited) { 'no direct or inherited Intune assignments found' }
-               else { 'no direct Intune assignments found' }
+    $include  = @($rows | Where-Object Assignment -EQ 'Include').Count
+    $filtered = @($rows | Where-Object FilteredOut).Count
+    $ruledOut = if ($filtered) { " ($filtered filtered out)" }
+    $summary  = if ($rows.Count) { "$include included$ruledOut, $($rows.Count - $include) excluded" }
+                elseif (-not $isGroup) { 'no Intune assignments found' }
+                elseif ($Inherited) { 'no direct or inherited Intune assignments found' }
+                else { 'no direct Intune assignments found' }
     if ($isGroup) {
         if ($viaParent) { $summary += " ($viaParent inherited)" }
         if ($allUsers -or $allDevices) { $summary += "; not listed: $allUsers to All users, $allDevices to All devices" }
@@ -486,9 +570,11 @@ function Get-IntuneAssignment {
     # groups: the exclusion wins, but the table puts the two rows under
     # different headings, so say so here. Keyed on intent as well, because an
     # app's exclusions belong to one intent (excluded from required says
-    # nothing about available).
+    # nothing about available). An include its filter already rules out
+    # doesn't count: its row says so itself.
     $both = @($rows | Group-Object PolicyId, Intent |
-        Where-Object { $_.Group.Assignment -contains 'Include' -and $_.Group.Assignment -contains 'Exclude' } |
+        Where-Object { @($_.Group | Where-Object { $_.Assignment -eq 'Include' -and -not $_.FilteredOut }).Count -and
+                       $_.Group.Assignment -contains 'Exclude' } |
         ForEach-Object { $first = $_.Group[0]; if ($first.Intent -and $first.Intent -ne 'apply') { "$($first.Name) ($($first.Intent))" } else { $first.Name } } |
         Sort-Object -Unique)
     if ($both.Count) {

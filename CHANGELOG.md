@@ -9,6 +9,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `Get-IntuneAssignment -Device` checks each assignment filter against the device.
+  - **Why.** The Filter column named a filter without saying what it did to the device, and the filter is the one thing that can still rule out an assignment the device's groups receive. The help said as much: targeting, not a verdict. For one device the verdict is a single question per filter, and Intune will answer it.
+  - **How.** Each distinct filter goes through `evaluateAssignmentFilter`, the call behind Preview devices in the filter editor, with the device's name as the search, so it costs one call per filter rather than one per row. The answer is matched on the Intune device id, not the name: the search also returns devices whose names merely contain it (LAPTOP-1 finds LAPTOP-10). Several Intune records can share one Entra device after a re-enrollment, so the one that synced last is used. The response is a report (`Columns`, then `Values` as rows) sent as `application/octet-stream`, so it's read off the raw HTTP response rather than the parsed object `Invoke-MgGraphRequest` usually hands back.
+  - **Output.** A row whose filter rules the device out reads `Filtered out` in the Assignment column. It isn't in the Filter column because that column is last and the first to be cut off. The `Assignment` property stays `Include`: `FilteredOut` holds the verdict (`$true`, `$false`, or `$null` where nothing was checked) and `FilterType` the raw include/exclude, so `Where-Object Assignment` and the counts mean what they did. The summary line counts them ("12 included (2 filtered out)"). An include that its own filter rules out no longer puts its policy on the "both included and excluded" line, since there's nothing left for the exclusion to win over.
+  - **What it judges.** The properties Intune holds for the device now, the way Preview devices does, not the record of its last check-in. That record (`getAssignmentFiltersStatusDetails`, behind the device's Filter evaluation tab) was the first choice. Tried against a live tenant, it came back empty for every filtered assignment of a device that had them, and the device-wide form of the call was refused. Filters on managed-app assignments judge the app rather than the device, so they're left unchecked. `-User` checks none, since each of a user's devices can answer differently.
+  - **Failures.** A filter that can't be checked is named in a warning and its rows stay unmarked. The other filters are still checked. A device with no Intune record gets a warning saying so, and nothing is checked.
+
 ## [0.8.0] - 2026-11-19
 
 ### Added
