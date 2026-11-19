@@ -2122,7 +2122,7 @@ Describe 'Intune assignments (mocked Graph)' {
 
     BeforeAll {
         # Same stub-then-mock pattern as the overview-data suite above.
-        function Invoke-MgGraphRequest { param($Method, $Uri, $Body, $ContentType, $OutputType, $ErrorAction) throw "stub not mocked: $Method $Uri (ErrorAction=$ErrorAction)" }
+        function Invoke-MgGraphRequest { param($Method, $Uri, $Body, $ContentType, $OutputType, $ErrorAction) throw "stub not mocked: $Method $Uri $ContentType $OutputType $Body (ErrorAction=$ErrorAction)" }
         function Get-MgContext { }
 
         # evaluateAssignmentFilter answers with a report rather than an OData
