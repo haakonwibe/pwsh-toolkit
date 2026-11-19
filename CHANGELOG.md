@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-19
+
 ### Added
 
 - `Get-IntuneAssignment`: everything Intune assigns to a group, user or device, or excludes it from.
